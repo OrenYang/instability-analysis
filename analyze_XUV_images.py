@@ -10,7 +10,7 @@ margin_top = 70 #px     Amount of image not included in the analysis, in case of
 margin_bot = 10 #px
 threshold_fraction = 0.25 # Fraction between max and min intensity to define boundary (0-1)
 pinch_height = 13.5 #mm
-variable = True # Change threshold and margins for every image in folder (True/False)
+variable = False # Change threshold and margins for every image in folder (True/False)
 
 # Choose how to get timing information, mcp_timings.shotsheet() for directly from a UCSD shotsheet
 # mcp_timings.excel() for custom excel file
@@ -43,9 +43,18 @@ with open(f'{output_folder}output.csv', 'w', newline='') as f:
     for img in os.listdir(image_dir):
         bad = True # parameter determining if you need to adjust threshold multiple times
         path = os.path.join(image_dir, img)
-        shot = float(img[:4])
-        cam = img.split('_')[1]
-        frame = img.split('_')[2][0]
+        try:
+            shot = float(img[:4])
+            cam = img.split('_')[1]
+            frame = img.split('_')[2][0]
+        except (ValueError, IndexError):
+            print(f"Skipping {img}: filename format incorrect")
+            continue
+
+        if shot not in timing_df:
+            print(f"Skipping {img}: Shot {shot} not in timing data")
+            continue
+
         timing = timing_df[shot]['{} frame {}'.format(cam.lower(), frame)]
 
         # Optionally adjust threshold and margin each image
