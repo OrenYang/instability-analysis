@@ -51,6 +51,7 @@ with open(f'{output_folder}output.csv', 'w', newline='') as f:
             print(f"Skipping {img}: filename format incorrect")
             continue
 
+        # Skip images that dont have shots in the timing df
         if shot not in timing_df:
             print(f"Skipping {img}: Shot {shot} not in timing data")
             continue
