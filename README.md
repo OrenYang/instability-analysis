@@ -8,14 +8,23 @@ The cropped image files need to be renamed "XXXX_MCPX_X" for example "2500_MCP1_
 
 The mcp_timings.py code can get timings either directly from shotsheets (mcp_timings.shotsheet()) or through a custom excel file (mcp_timings.excel()). the excel file should have the format:
 
+
 Shot             1234     1235    1236     1237    1238
+
 mcp1 frame 1     201.6    310.2   134.0    240.4   235
+
 mcp1 frame 2     205.6    216.5   178.4    140.3   168
+
 mcp1 frame 3     221.1    310.9   234.2    220.4   120
+
 mcp1 frame 4     101.6    345.8   134.7    140.9   270
+
 mcp2 frame 1     251.5    210.2   134.0    140.4   171
+
 mcp2 frame 2     141.8    110.1   209.9    390.8   174
+
 mcp2 frame 3     291.8    320.2   134.0    150.5   180
+
 mcp2 frame 4     301.6    340.2   217.4    120.4   160
 
 Where the value in the table is the timing of the frame.
