@@ -439,7 +439,8 @@ class EdgeGUI:
         output_folder = self.output_folder_path
         if output_folder:
             image_path = self.image_list[self.current_index]
-            output_path = os.path.join(output_folder, os.path.basename(image_path).replace(".jpg", "_saved.png"))
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            output_path = os.path.join(output_folder, f"{base_name}_fit.png")
 
             # Update the plot without drawing forbidden zones
             self.update_plot(draw_forbidden_zones=False)
