@@ -1,12 +1,15 @@
 Code to fit outline of pinch and determine pinch radius and instability amplitude
 
-analyze_XUV_images.py is the mian file to interact with. It calls on contour_analysis.py and mcp_timings.py. 
-canny_analysis.py and gradient_analysis.py attempt to do the same thing as contour analysis but were less succesful and not used in the final analyze_XUV_images code.
+RUN instability_analysis_gui.py TO OPEN APP FOR ANALYZING IMAGES. UPLOAD IMAGES OR FOLDER OF IMAGES CROPPED AND NAMED AS DESCRIBED BELOW. UPLOAD TIMING INPUT, EXAMPLE FORMAT IS LISTED BELOW. this is the most useful file, all others can be ignored. mess with the parameters in this gui to create a good fit and then update the csv and save the image. click and drag on the image to create "forbidden regions" if it is detecting random points.
+
+instability_analysis.py is the mian file to interact with if done more manually. It calls on contour_analysis.py and timings.py. 
+
+canny_analysis.py and gradient_analysis.py attempt to do the same thing as contour analysis but were less succesful and not used in the final instability_analysis code.
 
 To start the analysis, crop the images so there is only one frame per image and the height of the images matches the pinch height. This can be done in imagej or any other image editting software.
 The cropped image files need to be renamed "XXXX_MCPX_X" for example "2500_MCP1_3" where the last digit is the frame number. All images should be saved into one folder.
 
-The mcp_timings.py code can get timings either directly from shotsheets (mcp_timings.shotsheet()) or through a custom excel file (mcp_timings.excel()). the excel file should have the format:
+The timings.py code can get timings either directly from shotsheets (timings.shotsheet()) or through a custom excel file (timings.excel()). the excel file should have the format:
 
 
 Shot             1234     1235    1236     1237    1238
@@ -29,7 +32,7 @@ mcp2 frame 4     301.6    340.2   217.4    120.4   160
 
 Where the value in the table is the timing of the frame.
 
-Within the analyze_XUV_images.py code, you will adjust some parameters for each image/image folder. 
+Within the instability_analysis.py code, you will adjust some parameters for each image/image folder. 
 "margin_top" and "margin_bot" determine how many pixels are ignored from the ends of the pinch. This is done to ignore any unreal contours that would effect pinch radius and instability
 "threshold_fraction" determines where the pinch boundary is drawn and is a value between 0 and 1. If it is close to 1 the boundary will be closer to the highest intensity, close to zero will extend the boundary past the edge of the pinch.
 "Save" is a boolean that determines whether the fitted images will be saved to the output folder.
