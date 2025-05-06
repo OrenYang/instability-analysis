@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+from collections import defaultdict
+import re
 
 image_path = "zoomed_test.png"
 margin_top = 20
@@ -9,12 +11,46 @@ margin_bot = 10
 threshold_fraction = 0.2
 pinch_height = 13.5 #mm
 
-def find_edges(image_path, margin_top=0, margin_bot=0, threshold_fraction=0.5, pinch_height=0, save=False, output_folder = ''):
-    # Load the image
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+def select_points(x_list, mode, side, center):
+    x_sorted = sorted(x_list)
+    if mode == 'all':
+        return x_sorted
 
-    # Apply Gaussian Blur (optional, helps with noise)
-    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+    match = re.match(r'(inner|outer)(\d+)', mode)
+    if not match:
+        raise ValueError("Invalid point_mode. Use 'all', 'innerN', or 'outerN'.")
+
+    mode_type, n_str = match.groups()
+    n = int(n_str)
+
+    if len(x_list) <= n:
+        return x_sorted
+
+    if mode_type == 'inner':
+        return sorted(x_list, key=lambda x: abs(x - center))[:n]
+
+    elif mode_type == 'outer':
+        if n == 1:
+            # Take the farther of the two ends
+            dist_first = abs(x_sorted[0] - center)
+            dist_last = abs(x_sorted[-1] - center)
+            return [x_sorted[0]] if dist_first >= dist_last else [x_sorted[-1]]
+        else:
+            # Take half from each end
+            half = n // 2
+            remainder = n % 2
+            return x_sorted[:half + remainder] + x_sorted[-half:]
+
+def find_edges(image_path, margin_top=0, margin_bot=0, threshold_fraction=0.5, pinch_height=0, save=False, output_folder = '', point_mode='all', display_image_path=None):
+    # Load the analysis image (possibly cleaned/edited)
+    analysis_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    blurred = cv2.GaussianBlur(analysis_image, (5, 5), 0)
+
+    # Load display image (original) for plotting
+    display_path = display_image_path if display_image_path else image_path
+    display_pil = Image.open(display_path).convert('L')
+    display_array = np.array(display_pil)
+    wid, hgt = display_pil.size
 
     # Compute min and peak intensity in the image
     min_intensity = np.min(blurred)
@@ -50,34 +86,42 @@ def find_edges(image_path, margin_top=0, margin_bot=0, threshold_fraction=0.5, p
 
         peak_idx.append(local_max_index)
 
-    # Initialize arrays for x and y coordinates
-    left_x = []
-    left_y = []
-    right_x = []
-    right_y = []
 
     # Define cutoff range (ignore top 10 and bottom 10 rows)
     y_min, y_max = margin_top, hgt - margin_bot
 
     # Extract contour points, ignoring the top and bottom 10 rows
+    left_points_by_y = defaultdict(list)
+    right_points_by_y = defaultdict(list)
+
     for contour in contours:
         for point in contour:
-            x, y = point[0]  # Extract x and y coordinates
-            if y_min <= y <= y_max:  # Only process contours within valid range
-                if y < len(peak_idx):  # Ensure y index is within bounds
-                    if x < peak_idx[y]:
-                        left_x.append(x)
-                        left_y.append(y)
-                    elif x > peak_idx[y]:
-                        right_x.append(x)
-                        right_y.append(y)
+            x, y = point[0]
+            if y_min <= y <= y_max and y < len(peak_idx):
+                if x < peak_idx[y]:
+                    left_points_by_y[y].append(x)
+                elif x > peak_idx[y]:
+                    right_points_by_y[y].append(x)
 
-    # Draw contours on the original image
-    image_color = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    #cv2.drawContours(image_color, contours, -1, (0, 255, 0), 2)
+    left_x, left_y, right_x, right_y = [], [], [], []
+    for y in range(y_min, y_max + 1):
+        if y in left_points_by_y:
+            selected = select_points(left_points_by_y[y], point_mode, 'left', peak_idx[y])
+            left_x.extend(selected)
+            left_y.extend([y] * len(selected))
+        if y in right_points_by_y:
+            selected = select_points(right_points_by_y[y], point_mode, 'right', peak_idx[y])
+            right_x.extend(selected)
+            right_y.extend([y] * len(selected))
 
-    # Convert BGR to RGB for Matplotlib
+    # Draw on original image
+    image_color = cv2.cvtColor(display_array, cv2.COLOR_GRAY2BGR)
     image_rgb = cv2.cvtColor(image_color, cv2.COLOR_BGR2RGB)
+
+    #plt.figure()
+    #plt.imshow(image_rgb)
+    #plt.title(image_path.split('.')[0].split('/')[1].replace("_", " "))
+    #plt.show()
 
     # Fit left edge to look at zippering
     left_coef = np.polyfit(left_y,left_x,1)
@@ -88,6 +132,15 @@ def find_edges(image_path, margin_top=0, margin_bot=0, threshold_fraction=0.5, p
     right_coef = np.polyfit(right_y,right_x,1)
     right_poly1d_fn = np.poly1d(right_coef)
     right_avg = right_poly1d_fn(right_y)
+
+    # Calculate flaring (zippering) angle in degrees from vertical
+    left_slope = left_coef[0]
+    right_slope = right_coef[0]
+    left_angle = np.degrees(np.arctan(abs(left_slope)))
+    right_angle = np.degrees(np.arctan(abs(right_slope)))
+    avg_angle = (left_angle + right_angle) / 2
+
+    print(f'Flaring Angles: Left = {left_angle:.2f}°, Right = {right_angle:.2f}°, Average = {avg_angle:.2f}°')
 
     # Find mean pinch radius
     left_mean = np.mean(left_x)
@@ -122,4 +175,4 @@ def find_edges(image_path, margin_top=0, margin_bot=0, threshold_fraction=0.5, p
 
     plt.show()
 
-    return round(pinch_radius,2), round(instability,2), round(left_mean,2), round(right_mean,2), left_avg, right_avg
+    return round(pinch_radius,2), round(instability,2), round(left_mean,2), round(right_mean,2), left_avg, right_avg, round(left_angle,2), round(right_angle,2), round(avg_angle,2)

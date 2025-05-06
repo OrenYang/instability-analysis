@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use("TkAgg")
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog
@@ -7,7 +9,7 @@ def excel():
     # Popup for chosing excel file
     root = tk.Tk()
     root.withdraw()
-    filepath = filedialog.askopenfilename()
+    filepath = filedialog.askopenfilename(title='choose timing excel')
     root.destroy()
 
     df = pd.read_excel(filepath, header=None)
@@ -26,7 +28,7 @@ def shotsheet():
     root.withdraw()
 
     # Pop up for chosing the shot sheet
-    filepath = filedialog.askopenfilename()
+    filepath = filedialog.askopenfilename(title='choose shotsheet')
 
     root.destroy()
 
