@@ -513,7 +513,7 @@ class EdgeGUI:
                 'Instability Amplitude std (mm)': result['instability_std'],
                 'Left Flaring Angle (deg)': result['left_angle'],
                 'Right Flaring Angle (deg)': result['right_angle'],
-                'Avg FlaringAngle (deg)': result['avg_angle'],
+                'Avg Flaring Angle (deg)': result['avg_angle'],
                 'Flaring Angle std (deg)': result['angle_std'],
                 'Timing (ns)': result['timing'] if result['timing'] is not None else "",
                 'Top Margin': result['margin_top'],
