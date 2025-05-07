@@ -126,22 +126,24 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         pxmm = hgt / pinch_height
         pinch_radius = (right_mean - left_mean) / 2 / pxmm
-        left_std = np.std(left_x)
-        right_std = np.std(right_x)
-        instability = (left_std + right_std) / 2 / pxmm
+        left_std = np.std(left_x) / pxmm
+        right_std = np.std(right_x) / pxmm
+        instability = (left_std + right_std) / 2
+        instability_std = np.std([left_std, right_std])
 
         left_slope = left_coef[0]
         right_slope = right_coef[0]
         left_angle = np.degrees(np.arctan(abs(left_slope)))
         right_angle = np.degrees(np.arctan(abs(right_slope)))
         avg_angle = (left_angle + right_angle) / 2
+        angle_std = np.std([left_angle, right_angle])
 
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
             ax.add_patch(plt.Rectangle((zx, zy), zw, zh, color='red', alpha=0.2))
 
     ax.axis('off')
-    return fig, pinch_radius, instability, left_angle, right_angle, avg_angle
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std
 
 
 # GUI Class
@@ -187,11 +189,14 @@ class EdgeGUI:
         help_label.bind("<Button-1>", self.show_timing_help)
 
         # Previous/Next buttons
-        self.prev_button = Button(controls, text="Previous", command=self.show_previous_image)
-        self.prev_button.pack(anchor='w', pady=2)
+        nav_frame = Frame(controls)
+        nav_frame.pack(anchor='w', pady=2)
 
-        self.next_button = Button(controls, text="Next", command=self.show_next_image)
-        self.next_button.pack(anchor='w', pady=2)
+        self.prev_button = Button(nav_frame, text="Previous", command=self.show_previous_image)
+        self.prev_button.pack(side='left', padx=(0, 5))
+
+        self.next_button = Button(nav_frame, text="Next", command=self.show_next_image)
+        self.next_button.pack(side='left')
 
         # Remaining controls (unchanged)
         self.margin_top_scale = Scale(controls, from_=0, to=300, orient=HORIZONTAL, label="Top Margin", command=self.on_slider_change)
@@ -206,15 +211,35 @@ class EdgeGUI:
         self.threshold_scale.set(40)
         self.threshold_scale.pack(anchor='w', pady=2)
 
+        point_mode_frame = Frame(controls)
+        point_mode_frame.pack(anchor='w', pady=2)
+
+        Label(point_mode_frame, text="Mode:").pack(side='left', padx=(0, 5))
+
         self.point_mode_var = StringVar()
         self.point_mode_var.set('all')
-        self.point_mode_menu = OptionMenu(controls, self.point_mode_var, 'all', 'inner', 'outer')
-        self.point_mode_menu.pack(anchor='w', pady=2)
+        self.point_mode_menu = OptionMenu(point_mode_frame, self.point_mode_var, 'all', 'inner', 'outer')
+        self.point_mode_menu.pack(side='left')
         self.point_mode_var.trace_add("write", lambda *args: self.update_plot())
 
-        self.N_slider = Scale(controls, from_=1, to=20, orient=HORIZONTAL, label="N for Inner/Outer", command=self.on_slider_change)
+        # N value label (replaces "N:")
+        self.N_value_label = Label(point_mode_frame, text=str(5))
+        self.N_value_label.pack(side='left', padx=(10, 5))
+
+        # Slider without number on top
+        self.N_slider = Scale(
+            point_mode_frame, from_=1, to=20, orient=HORIZONTAL,
+            length=100, showvalue=False, command=self.on_slider_change
+        )
         self.N_slider.set(5)
-        self.N_slider.pack(anchor='w', pady=2)
+        self.N_slider.pack(side='left')
+
+        # Update label with slider value
+        def update_N_label(val):
+            self.N_value_label.config(text=str(int(float(val))))
+            self.on_slider_change(val)
+
+        self.N_slider.config(command=update_N_label)
 
         Label(controls, text="Pinch Height (mm):").pack(anchor='w')
         self.pinches_height_entry = Entry(controls)
@@ -344,7 +369,7 @@ class EdgeGUI:
         pinch_height_str = self.pinches_height_entry.get()
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
 
-        new_fig, pinch_radius, instability, left_angle, right_angle, avg_angle = analyze_image(
+        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -366,10 +391,14 @@ class EdgeGUI:
         # Store results
         self.image_settings[image_path] = {
             'pinch_radius': pinch_radius,
+            'left_instability': left_instability,
+            'right_instability': right_instability,
             'instability': instability,
+            'instability_std': instability_std,
             'left_angle': left_angle,
             'right_angle': right_angle,
             'avg_angle': avg_angle,
+            'angle_std': angle_std,
             'timing': timing,
             'margin_top': margin_top,
             'margin_bot': margin_bot,
@@ -383,19 +412,21 @@ class EdgeGUI:
         # Display
         result_text = (
             f"Pinch Radius: {pinch_radius:.2f} mm\n"
-            f"Instability Amplitude: {instability:.2f} mm\n"
-            f"Left Flare Angle: {left_angle:.2f}°\n"
-            f"Right Flare Angle: {right_angle:.2f}°\n"
-            f"Avg. Flare Angle: {avg_angle:.2f}°\n"
+            f"Left Instability Amplitude: {left_instability:.2f} mm\n"
+            f"Right Instability Amplitude: {right_instability:.2f} mm\n"
+            f"Avg. Instability Amplitude: {instability:.2f} mm\n"
+            f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
+            f"Left Flaring Angle: {left_angle:.2f}°\n"
+            f"Right Flaring Angle: {right_angle:.2f}°\n"
+            f"Avg. Flaring Angle: {avg_angle:.2f}°\n"
+            f"Flare Angle Std.: {angle_std:.2f}°\n"
         )
         if timing is not None:
-            result_text += f"Timing: {timing:.2f} µs"
+            result_text += f"Timing: {timing:.2f} ns"
         else:
             result_text += "Timing: N/A"
 
         self.result_label.config(text=result_text)
-
-
 
     def on_mouse_press(self, event):
         if event.inaxes:
@@ -461,7 +492,7 @@ class EdgeGUI:
             df = pd.read_csv(output_file)
         else:
             df = pd.DataFrame(columns=[
-                'Image', 'Timing (µs)', 'Pinch Radius (mm)', 'Instability (mm)',
+                'Image', 'Timing (ns)', 'Pinch Radius (mm)', 'Instability (mm)',
                 'Left Angle (deg)', 'Right Angle (deg)', 'Avg Angle (deg)',
                 'Top Margin', 'Bottom Margin', 'Threshold (%)', 'Point Mode',
                 'N', 'Pinch Height (mm)'
@@ -476,11 +507,15 @@ class EdgeGUI:
             row = {
                 'Image': filename,
                 'Pinch Radius (mm)': result['pinch_radius'],
-                'Instability (mm)': result['instability'],
-                'Left Angle (deg)': result['left_angle'],
-                'Right Angle (deg)': result['right_angle'],
-                'Avg Angle (deg)': result['avg_angle'],
-                'Timing (µs)': result['timing'] if result['timing'] is not None else "",
+                'Left Instability Amplitude (mm)': result['left_instability'],
+                'Right Instability Amplitude (mm)': result['right_instability'],
+                'Avg Instability Amplitude (mm)': result['instability'],
+                'Instability Amplitude std (mm)': result['instability_std'],
+                'Left Flaring Angle (deg)': result['left_angle'],
+                'Right Flaring Angle (deg)': result['right_angle'],
+                'Avg FlaringAngle (deg)': result['avg_angle'],
+                'Flaring Angle std (deg)': result['angle_std'],
+                'Timing (ns)': result['timing'] if result['timing'] is not None else "",
                 'Top Margin': result['margin_top'],
                 'Bottom Margin': result['margin_bot'],
                 'Threshold (%)': result['threshold_fraction'] * 100,
