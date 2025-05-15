@@ -143,7 +143,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             ax.add_patch(plt.Rectangle((zx, zy), zw, zh, color='red', alpha=0.2))
 
     ax.axis('off')
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean
 
 
 # GUI Class
@@ -369,7 +369,7 @@ class EdgeGUI:
         pinch_height_str = self.pinches_height_entry.get()
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
 
-        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std = analyze_image(
+        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -383,7 +383,6 @@ class EdgeGUI:
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)
-
         self.canvas.mpl_connect("button_press_event", self.on_mouse_press)
         self.canvas.mpl_connect("motion_notify_event", self.on_mouse_drag)
         self.canvas.mpl_connect("button_release_event", self.on_mouse_release)
