@@ -491,10 +491,7 @@ class EdgeGUI:
             df = pd.read_csv(output_file)
         else:
             df = pd.DataFrame(columns=[
-                'Image', 'Timing (ns)', 'Pinch Radius (mm)', 'Instability (mm)',
-                'Left Angle (deg)', 'Right Angle (deg)', 'Avg Angle (deg)',
-                'Top Margin', 'Bottom Margin', 'Threshold (%)', 'Point Mode',
-                'N', 'Pinch Height (mm)'
+                'Image', 'Timing (ns)',
             ])
 
         # Prepare new rows
