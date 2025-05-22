@@ -47,7 +47,7 @@ def in_forbidden_zone(x, y, zones):
 
 # Image analysis function
 def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_height=13.5,
-                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True):
+                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True, title=None):
     if forbidden_zones is None:
         forbidden_zones = []
 
@@ -142,7 +142,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         for zx, zy, zw, zh in forbidden_zones:
             ax.add_patch(plt.Rectangle((zx, zy), zw, zh, color='red', alpha=0.2))
 
+    if title:
+        ax.set_title(title, fontsize=10)
     ax.axis('off')
+
     return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean
 
 
@@ -377,7 +380,8 @@ class EdgeGUI:
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
-            draw_forbidden_zones=draw_forbidden_zones
+            draw_forbidden_zones=draw_forbidden_zones,
+            title=image_name
         )
 
         # Update plot
