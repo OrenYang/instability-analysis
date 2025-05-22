@@ -160,6 +160,7 @@ class EdgeGUI:
         self.output_folder_path = False
         self.timing_df = None
         self.image_settings = {}  # Store results per image
+        self.current_image = None
 
 
         main_frame = Frame(root)
@@ -325,12 +326,14 @@ class EdgeGUI:
         if self.current_index > 0:
             self.current_index -= 1
             self.forbidden_zones.clear()
+            self.restore_settings()
             self.update_plot()
 
     def show_next_image(self):
         if self.current_index < len(self.image_list) - 1:
             self.current_index += 1
             self.forbidden_zones.clear()
+            self.restore_settings()
             self.update_plot()
 
     def on_slider_change(self, event=None):
@@ -342,6 +345,7 @@ class EdgeGUI:
 
         image_path = self.image_list[self.current_index]
         image_name = os.path.basename(image_path)
+        self.current_image = image_path
 
         # Parse shot, cam, frame from filename
         try:
@@ -461,6 +465,21 @@ class EdgeGUI:
         self.forbidden_zones.clear()
         self.update_plot()
 
+    def restore_settings(self):
+        image_path = self.image_list[self.current_index]
+        if image_path not in self.image_settings:
+            return  # Nothing to restore
+
+        settings = self.image_settings[image_path]
+
+        self.margin_top_scale.set(settings['margin_top'])
+        self.margin_bot_scale.set(settings['margin_bot'])
+        self.threshold_scale.set(int(settings['threshold_fraction'] * 100))
+        self.point_mode_var.set(settings['point_mode'])
+        self.N_slider.set(settings['N'])
+        self.pinches_height_entry.delete(0, 'end')
+        self.pinches_height_entry.insert(0, str(settings['pinch_height']))
+
     def save_image(self):
         # Save the figure (matplotlib plot) without drawing forbidden zones
         if self.current_index == -1 or not self.image_list:
@@ -497,34 +516,35 @@ class EdgeGUI:
         # Prepare new rows
         rows = []
         for img_path, result in self.image_settings.items():
-            filename = os.path.basename(img_path)
+            if img_path == self.current_image:
+                filename = os.path.basename(img_path)
 
-            # Create a row to append
-            row = {
-                'Image': filename,
-                'Pinch Radius (mm)': result['pinch_radius'],
-                'Left Instability Amplitude (mm)': result['left_instability'],
-                'Right Instability Amplitude (mm)': result['right_instability'],
-                'Avg Instability Amplitude (mm)': result['instability'],
-                'Instability Amplitude std (mm)': result['instability_std'],
-                'Left Flaring Angle (deg)': result['left_angle'],
-                'Right Flaring Angle (deg)': result['right_angle'],
-                'Avg Flaring Angle (deg)': result['avg_angle'],
-                'Flaring Angle std (deg)': result['angle_std'],
-                'Timing (ns)': result['timing'] if result['timing'] is not None else "",
-                'Top Margin': result['margin_top'],
-                'Bottom Margin': result['margin_bot'],
-                'Threshold (%)': result['threshold_fraction'] * 100,
-                'Point Mode': result['point_mode'],
-                'N': result['N'],
-                'Pinch Height (mm)': result['pinch_height']
-            }
+                # Create a row to append
+                row = {
+                    'Image': filename,
+                    'Pinch Radius (mm)': result['pinch_radius'],
+                    'Left Instability Amplitude (mm)': result['left_instability'],
+                    'Right Instability Amplitude (mm)': result['right_instability'],
+                    'Avg Instability Amplitude (mm)': result['instability'],
+                    'Instability Amplitude std (mm)': result['instability_std'],
+                    'Left Flaring Angle (deg)': result['left_angle'],
+                    'Right Flaring Angle (deg)': result['right_angle'],
+                    'Avg Flaring Angle (deg)': result['avg_angle'],
+                    'Flaring Angle std (deg)': result['angle_std'],
+                    'Timing (ns)': result['timing'] if result['timing'] is not None else "",
+                    'Top Margin': result['margin_top'],
+                    'Bottom Margin': result['margin_bot'],
+                    'Threshold (%)': result['threshold_fraction'] * 100,
+                    'Point Mode': result['point_mode'],
+                    'N': result['N'],
+                    'Pinch Height (mm)': result['pinch_height']
+                }
 
-            # Check if this image already exists in the CSV, and update it if necessary
-            if filename in df['Image'].values:
-                df.loc[df['Image'] == filename, list(row.keys())] = list(row.values())
-            else:
-                rows.append(row)
+                # Check if this image already exists in the CSV, and update it if necessary
+                if filename in df['Image'].values:
+                    df.loc[df['Image'] == filename, list(row.keys())] = list(row.values())
+                else:
+                    rows.append(row)
 
         # If there are new rows, append them to the DataFrame
         if rows:
