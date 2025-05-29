@@ -130,6 +130,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         right_std = np.std(right_x) / pxmm
         instability = (left_std + right_std) / 2
         instability_std = np.std([left_std, right_std])
+        left_iqr = (np.percentile(left_x, 75) - np.percentile(left_x, 25)) / pxmm
+        right_iqr = (np.percentile(right_x, 75) - np.percentile(right_x, 25)) / pxmm
+        instability_iqr = (left_iqr + right_iqr) / 2
+        instability_iqr_std = np.std([left_iqr, right_iqr])
 
         left_slope = left_coef[0]
         right_slope = right_coef[0]
@@ -146,7 +150,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.set_title(title, fontsize=10)
     ax.axis('off')
 
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std
 
 
 # GUI Class
@@ -376,7 +380,7 @@ class EdgeGUI:
         pinch_height_str = self.pinches_height_entry.get()
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
 
-        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean = analyze_image(
+        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -402,6 +406,10 @@ class EdgeGUI:
             'right_instability': right_instability,
             'instability': instability,
             'instability_std': instability_std,
+            'left_iqr': left_iqr,
+            'right_iqr': right_iqr,
+            'instability_iqr': instability_iqr,
+            'instability_iqr_std': instability_iqr_std,
             'left_angle': left_angle,
             'right_angle': right_angle,
             'avg_angle': avg_angle,
@@ -423,6 +431,10 @@ class EdgeGUI:
             f"Right Instability Amplitude: {right_instability:.2f} mm\n"
             f"Avg. Instability Amplitude: {instability:.2f} mm\n"
             f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
+            f"Left Instability Amplitude - IQR: {left_iqr:.2f} mm\n"
+            f"Right Instability Amplitude - IQR: {right_iqr:.2f} mm\n"
+            f"Avg. Instability Amplitude - IQR: {instability_iqr:.2f} mm\n"
+            f"Instability Amplitude Std. - IQR: {instability_iqr_std:.2f} mm\n"
             f"Left Flaring Angle: {left_angle:.2f}°\n"
             f"Right Flaring Angle: {right_angle:.2f}°\n"
             f"Avg. Flaring Angle: {avg_angle:.2f}°\n"
@@ -531,6 +543,10 @@ class EdgeGUI:
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
                     'Instability Amplitude std (mm)': result['instability_std'],
+                    'Left Instability Amplitude IQR (mm)': result['left_iqr'],
+                    'Right Instability Amplitude IQR (mm)': result['right_iqr'],
+                    'Avg Instability Amplitude IQR (mm)': result['instability_iqr'],
+                    'Instability Amplitude std IQR (mm)': result['instability_iqr_std'],
                     'Left Flaring Angle (deg)': result['left_angle'],
                     'Right Flaring Angle (deg)': result['right_angle'],
                     'Avg Flaring Angle (deg)': result['avg_angle'],
