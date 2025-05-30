@@ -247,7 +247,7 @@ class EdgeGUI:
         self.threshold_scale.set(40)
         self.threshold_scale.pack(anchor='w', pady=2)
 
-        self.total_points = Scale(controls, from_=0, to=5000, orient=HORIZONTAL, label="Total Points", command=self.on_slider_change)
+        self.total_points = Scale(controls, from_=0, to=4000, orient=HORIZONTAL, label="Total Points", command=self.on_slider_change)
         self.total_points.set(0)
         self.total_points.pack(anchor='w', pady=2)
 
