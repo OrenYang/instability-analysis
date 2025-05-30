@@ -47,7 +47,7 @@ def in_forbidden_zone(x, y, zones):
 
 # Image analysis function
 def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_height=13.5,
-                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True, title=None):
+                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True, title=None, total_points=None):
     if forbidden_zones is None:
         forbidden_zones = []
 
@@ -88,20 +88,48 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
                     right_points_by_y[y].append(x)
 
     left_x, left_y, right_x, right_y = [], [], [], []
-    for y in range(y_min, y_max + 1):
+    if total_points is None:
+        for y in range(y_min, y_max + 1):
+            mode = f"{point_mode}{N}" if point_mode in ['inner', 'outer'] else point_mode
+
+            if y in left_points_by_y:
+                selected = select_points(left_points_by_y[y], mode, 'left', peak_idx[y])
+                selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
+                left_x.extend(selected)
+                left_y.extend([y] * len(selected))
+
+            if y in right_points_by_y:
+                selected = select_points(right_points_by_y[y], mode, 'right', peak_idx[y])
+                selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
+                right_x.extend(selected)
+                right_y.extend([y] * len(selected))
+    else:
         mode = f"{point_mode}{N}" if point_mode in ['inner', 'outer'] else point_mode
 
-        if y in left_points_by_y:
-            selected = select_points(left_points_by_y[y], mode, 'left', peak_idx[y])
-            selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
-            left_x.extend(selected)
-            left_y.extend([y] * len(selected))
+        sampled_ys = np.linspace(y_min, y_max, y_max - y_min + 1, dtype=int)  # All rows
+        np.random.shuffle(sampled_ys)  # Randomize if you want more even sampling
 
-        if y in right_points_by_y:
-            selected = select_points(right_points_by_y[y], mode, 'right', peak_idx[y])
-            selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
-            right_x.extend(selected)
-            right_y.extend([y] * len(selected))
+        for y in sampled_ys:
+            if len(left_x) >= total_points and len(right_x) >= total_points:
+                break  # Stop once target is reached
+
+            if y in left_points_by_y and left_points_by_y[y] and len(left_x) < total_points:
+                selected = select_points(left_points_by_y[y], mode, 'left', peak_idx[y])
+                selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
+                for x in selected:
+                    if len(left_x) >= total_points:
+                        break
+                    left_x.append(x)
+                    left_y.append(y)
+
+            if y in right_points_by_y and right_points_by_y[y] and len(right_x) < total_points:
+                selected = select_points(right_points_by_y[y], mode, 'right', peak_idx[y])
+                selected = [x for x in selected if not in_forbidden_zone(x, y, forbidden_zones)]
+                for x in selected:
+                    if len(right_x) >= total_points:
+                        break
+                    right_x.append(x)
+                    right_y.append(y)
 
     image_color = cv2.cvtColor(im_array, cv2.COLOR_GRAY2RGB)
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -218,6 +246,10 @@ class EdgeGUI:
         self.threshold_scale = Scale(controls, from_=0, to=100, orient=HORIZONTAL, label="Threshold (%)", command=self.on_slider_change)
         self.threshold_scale.set(40)
         self.threshold_scale.pack(anchor='w', pady=2)
+
+        self.total_points = Scale(controls, from_=0, to=5000, orient=HORIZONTAL, label="Total Points", command=self.on_slider_change)
+        self.total_points.set(0)
+        self.total_points.pack(anchor='w', pady=2)
 
         point_mode_frame = Frame(controls)
         point_mode_frame.pack(anchor='w', pady=2)
@@ -379,13 +411,15 @@ class EdgeGUI:
         N = self.N_slider.get()
         pinch_height_str = self.pinches_height_entry.get()
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
+        total_points = self.total_points.get() if self.total_points.get()!=0 else None
 
         new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
             draw_forbidden_zones=draw_forbidden_zones,
-            title=image_name
+            title=image_name,
+            total_points = total_points
         )
 
         # Update plot
