@@ -170,6 +170,13 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         avg_angle = (left_angle + right_angle) / 2
         angle_std = np.std([left_angle, right_angle])
 
+        left_res = np.array(left_x) - np.poly1d(left_coef)(left_y)
+        right_res = np.array(right_x) - np.poly1d(right_coef)(right_y)
+        left_mrti = np.std(left_res / pxmm)
+        right_mrti = np.std(right_res / pxmm)
+        mrti_instability = (left_mrti + right_mrti) / 2
+        mrti_instability_std = np.std([left_mrti, right_mrti])
+
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
             ax.add_patch(plt.Rectangle((zx, zy), zw, zh, color='red', alpha=0.2))
@@ -178,7 +185,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.set_title(title, fontsize=10)
     ax.axis('off')
 
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, mrti_instability, mrti_instability_std
 
 
 # GUI Class
@@ -413,7 +420,10 @@ class EdgeGUI:
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
         total_points = self.total_points.get() if self.total_points.get()!=0 else None
 
-        new_fig, pinch_radius, left_instability, right_instability, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std = analyze_image(
+        new_fig, pinch_radius, left_instability, right_instability, \
+        instability, instability_std, left_angle, right_angle, avg_angle, angle_std, \
+        left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, \
+        mrti_instability, mrti_instability_std = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -439,6 +449,8 @@ class EdgeGUI:
             'left_instability': left_instability,
             'right_instability': right_instability,
             'instability': instability,
+            'mrti_instability': mrti_instability,
+            'mrti_instability_std': mrti_instability_std,
             'instability_std': instability_std,
             'left_iqr': left_iqr,
             'right_iqr': right_iqr,
@@ -454,7 +466,8 @@ class EdgeGUI:
             'threshold_fraction': threshold_fraction,
             'point_mode': point_mode,
             'N': N,
-            'pinch_height': pinch_height
+            'pinch_height': pinch_height,
+            'total_points': total_points
         }
 
 
@@ -465,6 +478,8 @@ class EdgeGUI:
             f"Right Instability Amplitude: {right_instability:.2f} mm\n"
             f"Avg. Instability Amplitude: {instability:.2f} mm\n"
             f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
+            f"Avg. MRTI Instability: {mrti_instability:.2f} mm\n"
+            f"MRTI Instability Std.: {mrti_instability_std:.2f} mm\n"
             f"Left Instability Amplitude - IQR: {left_iqr:.2f} mm\n"
             f"Right Instability Amplitude - IQR: {right_iqr:.2f} mm\n"
             f"Avg. Instability Amplitude - IQR: {instability_iqr:.2f} mm\n"
@@ -577,6 +592,8 @@ class EdgeGUI:
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
                     'Instability Amplitude std (mm)': result['instability_std'],
+                    'MRTI Instability (mm)': result['mrti_instability'],          
+                    'MRTI Instability std (mm)': result['mrti_instability_std'],
                     'Left Instability Amplitude IQR (mm)': result['left_iqr'],
                     'Right Instability Amplitude IQR (mm)': result['right_iqr'],
                     'Avg Instability Amplitude IQR (mm)': result['instability_iqr'],
@@ -591,7 +608,8 @@ class EdgeGUI:
                     'Threshold (%)': result['threshold_fraction'] * 100,
                     'Point Mode': result['point_mode'],
                     'N': result['N'],
-                    'Pinch Height (mm)': result['pinch_height']
+                    'Pinch Height (mm)': result['pinch_height'],
+                    'Total Points': result['total_points'] if result['total_points'] is not None else ""
                 }
 
                 # Check if this image already exists in the CSV, and update it if necessary
