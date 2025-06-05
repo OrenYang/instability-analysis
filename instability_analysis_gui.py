@@ -185,7 +185,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.set_title(title, fontsize=10)
     ax.axis('off')
 
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, mrti_instability, mrti_instability_std
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, mrti_instability, mrti_instability_std, len(left_x), len(right_x)
 
 
 # GUI Class
@@ -423,7 +423,7 @@ class EdgeGUI:
         new_fig, pinch_radius, left_instability, right_instability, \
         instability, instability_std, left_angle, right_angle, avg_angle, angle_std, \
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, \
-        mrti_instability, mrti_instability_std = analyze_image(
+        mrti_instability, mrti_instability_std, left_x, right_x = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -467,7 +467,9 @@ class EdgeGUI:
             'point_mode': point_mode,
             'N': N,
             'pinch_height': pinch_height,
-            'total_points': total_points
+            'total_points': total_points,
+            'left_x': left_x,
+            'right_x': right_x
         }
 
 
@@ -592,7 +594,7 @@ class EdgeGUI:
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
                     'Instability Amplitude std (mm)': result['instability_std'],
-                    'MRTI Instability (mm)': result['mrti_instability'],          
+                    'MRTI Instability (mm)': result['mrti_instability'],
                     'MRTI Instability std (mm)': result['mrti_instability_std'],
                     'Left Instability Amplitude IQR (mm)': result['left_iqr'],
                     'Right Instability Amplitude IQR (mm)': result['right_iqr'],
@@ -609,7 +611,9 @@ class EdgeGUI:
                     'Point Mode': result['point_mode'],
                     'N': result['N'],
                     'Pinch Height (mm)': result['pinch_height'],
-                    'Total Points': result['total_points'] if result['total_points'] is not None else ""
+                    'Total Points': result['total_points'] if result['total_points'] is not None else "",
+                    'Points in left boundary':result['left_x'],
+                    'Points in right boundary':result['right_x']
                 }
 
                 # Check if this image already exists in the CSV, and update it if necessary
