@@ -185,7 +185,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.set_title(title, fontsize=10)
     ax.axis('off')
 
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, mrti_instability, mrti_instability_std, len(left_x), len(right_x)
+    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, left_mrti, right_mrti, mrti_instability, mrti_instability_std, len(left_x), len(right_x)
 
 
 # GUI Class
@@ -423,7 +423,7 @@ class EdgeGUI:
         new_fig, pinch_radius, left_instability, right_instability, \
         instability, instability_std, left_angle, right_angle, avg_angle, angle_std, \
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, \
-        mrti_instability, mrti_instability_std, left_x, right_x = analyze_image(
+        left_mrti, right_mrti, mrti_instability, mrti_instability_std, left_x, right_x = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -449,6 +449,8 @@ class EdgeGUI:
             'left_instability': left_instability,
             'right_instability': right_instability,
             'instability': instability,
+            'left_mrti': left_mrti,
+            'right_mrti': right_mrti,
             'mrti_instability': mrti_instability,
             'mrti_instability_std': mrti_instability_std,
             'instability_std': instability_std,
@@ -476,20 +478,20 @@ class EdgeGUI:
         # Display
         result_text = (
             f"Pinch Radius: {pinch_radius:.2f} mm\n"
-            f"Left Instability Amplitude: {left_instability:.2f} mm\n"
-            f"Right Instability Amplitude: {right_instability:.2f} mm\n"
+            #f"Left Instability Amplitude: {left_instability:.2f} mm\n"
+            #f"Right Instability Amplitude: {right_instability:.2f} mm\n"
             f"Avg. Instability Amplitude: {instability:.2f} mm\n"
-            f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
+            #f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
             f"Avg. MRTI Instability: {mrti_instability:.2f} mm\n"
-            f"MRTI Instability Std.: {mrti_instability_std:.2f} mm\n"
-            f"Left Instability Amplitude - IQR: {left_iqr:.2f} mm\n"
-            f"Right Instability Amplitude - IQR: {right_iqr:.2f} mm\n"
+            #f"MRTI Instability Std.: {mrti_instability_std:.2f} mm\n"
+            #f"Left Instability Amplitude - IQR: {left_iqr:.2f} mm\n"
+            #f"Right Instability Amplitude - IQR: {right_iqr:.2f} mm\n"
             f"Avg. Instability Amplitude - IQR: {instability_iqr:.2f} mm\n"
-            f"Instability Amplitude Std. - IQR: {instability_iqr_std:.2f} mm\n"
+            #f"Instability Amplitude Std. - IQR: {instability_iqr_std:.2f} mm\n"
             f"Left Flaring Angle: {left_angle:.2f}°\n"
             f"Right Flaring Angle: {right_angle:.2f}°\n"
             f"Avg. Flaring Angle: {avg_angle:.2f}°\n"
-            f"Flare Angle Std.: {angle_std:.2f}°\n"
+            #f"Flare Angle Std.: {angle_std:.2f}°\n"
         )
         if timing is not None:
             result_text += f"Timing: {timing:.2f} ns"
@@ -594,6 +596,8 @@ class EdgeGUI:
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
                     'Instability Amplitude std (mm)': result['instability_std'],
+                    'Left Instability MRTI (mm)': result['left_mrti'],
+                    'Right Instability MRTI (mm)': result['right_mrti'],
                     'MRTI Instability (mm)': result['mrti_instability'],
                     'MRTI Instability std (mm)': result['mrti_instability_std'],
                     'Left Instability Amplitude IQR (mm)': result['left_iqr'],
