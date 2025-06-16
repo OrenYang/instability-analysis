@@ -135,10 +135,17 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.imshow(image_color)
 
-    if left_x: ax.plot(left_x, left_y, 'bo', markersize=1)
-    if right_x: ax.plot(right_x, right_y, 'ro', markersize=1)
+    if left_x:
+        ax.plot(left_x, left_y, 'bo', markersize=1)
+    if right_x:
+        ax.plot(right_x, right_y, 'ro', markersize=1)
 
     pinch_radius = instability = left_angle = right_angle = avg_angle = None
+    left_std = right_std = instability_std = None
+    left_iqr = right_iqr = instability_iqr = instability_iqr_std = None
+    angle_std = None
+    left_mean = right_mean = None
+    left_mrti = right_mrti = mrti_instability = mrti_instability_std = None
 
     if left_x and right_x:
         left_coef = np.polyfit(left_y, left_x, 1)
@@ -477,22 +484,27 @@ class EdgeGUI:
 
         # Display
         result_text = (
-            f"Pinch Radius: {pinch_radius:.2f} mm\n"
-            #f"Left Instability Amplitude: {left_instability:.2f} mm\n"
-            #f"Right Instability Amplitude: {right_instability:.2f} mm\n"
-            f"Avg. Instability Amplitude: {instability:.2f} mm\n"
-            #f"Instability Amplitude Std.: {instability_std:.2f} mm\n"
-            f"Avg. MRTI Instability: {mrti_instability:.2f} mm\n"
-            #f"MRTI Instability Std.: {mrti_instability_std:.2f} mm\n"
-            #f"Left Instability Amplitude - IQR: {left_iqr:.2f} mm\n"
-            #f"Right Instability Amplitude - IQR: {right_iqr:.2f} mm\n"
-            f"Avg. Instability Amplitude - IQR: {instability_iqr:.2f} mm\n"
-            #f"Instability Amplitude Std. - IQR: {instability_iqr_std:.2f} mm\n"
-            f"Left Flaring Angle: {left_angle:.2f}°\n"
-            f"Right Flaring Angle: {right_angle:.2f}°\n"
-            f"Avg. Flaring Angle: {avg_angle:.2f}°\n"
-            #f"Flare Angle Std.: {angle_std:.2f}°\n"
+            f"Pinch Radius: {fmt(pinch_radius, ' mm')}\n"
+            #f"Left Instability Amplitude: {fmt(left_instability, ' mm')}\n"
+            #f"Right Instability Amplitude: {fmt(right_instability, ' mm')}\n"
+            f"Avg. Instability Amplitude: {fmt(instability, ' mm')}\n"
+            #f"Instability Amplitude Std.: {fmt(instability_std, ' mm')}\n"
+            f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')}\n"
+            #f"MRTI Instability Std.: {fmt(mrti_instability_std, ' mm')}\n"
+            #f"Left Instability Amplitude - IQR: {fmt(left_iqr, ' mm')}\n"
+            #f"Right Instability Amplitude - IQR: {fmt(right_iqr, ' mm')}\n"
+            f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')}\n"
+            #f"Instability Amplitude Std. - IQR: {fmt(instability_iqr_std, ' mm')}\n"
+            f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
+            f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
+            f"Avg. Flaring Angle: {fmt(avg_angle, '°')}\n"
+            #f"Flare Angle Std.: {fmt(angle_std, '°')}\n"
         )
+
+        result_text += f"Timing: {fmt(timing, ' ns')}" if timing is not None else "Timing: N/A"
+
+
+
         if timing is not None:
             result_text += f"Timing: {timing:.2f} ns"
         else:
@@ -637,6 +649,8 @@ class EdgeGUI:
 
 
 
+def fmt(val, unit="", precision=2):
+    return f"{val:.{precision}f}{unit}" if val is not None else "N/A"
 
 
 if __name__ == "__main__":
