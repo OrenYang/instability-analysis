@@ -577,7 +577,7 @@ class EdgeGUI:
 
             # Save the figure
             self.fig.savefig(output_path, bbox_inches='tight', pad_inches=0.1)
-            print(f"Figure saved to {output_path}")
+            messagebox.showinfo("Figure Saved", f"Figure saved to:\n{output_path}")
 
     def write_results_to_csv(self):
         if not self.output_folder_path:
