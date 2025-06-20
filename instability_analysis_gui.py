@@ -161,6 +161,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         pxmm = hgt / pinch_height
         pinch_radius = (right_mean - left_mean) / 2 / pxmm
+        left_sem = np.std(left_x) / np.sqrt(len(left_x)) / pxmm
+        right_sem = np.std(right_x) / np.sqrt(len(right_x)) / pxmm
+        radius_sem = np.sqrt(left_sem**2 + right_sem**2) / 2
+
         left_std = np.std(left_x) / pxmm
         right_std = np.std(right_x) / pxmm
         instability = (left_std + right_std) / 2
@@ -192,7 +196,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.set_title(title, fontsize=10)
     ax.axis('off')
 
-    return fig, pinch_radius, left_std, right_std, instability, instability_std, left_angle, right_angle, avg_angle, angle_std, left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, left_mrti, right_mrti, mrti_instability, mrti_instability_std, len(left_x), len(right_x)
+    return (fig, pinch_radius, radius_sem, left_std, right_std, instability,
+        instability_std, left_angle, right_angle, avg_angle, angle_std,
+        left_mean, right_mean, left_iqr, right_iqr, instability_iqr,
+        instability_iqr_std, left_mrti, right_mrti, mrti_instability,
+        mrti_instability_std, len(left_x), len(right_x), left_x, left_y, right_x, right_y)
 
 
 # GUI Class
@@ -427,10 +435,11 @@ class EdgeGUI:
         pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
         total_points = self.total_points.get() if self.total_points.get()!=0 else None
 
-        new_fig, pinch_radius, left_instability, right_instability, \
+        new_fig, pinch_radius, radius_sem, left_instability, right_instability, \
         instability, instability_std, left_angle, right_angle, avg_angle, angle_std, \
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, \
-        left_mrti, right_mrti, mrti_instability, mrti_instability_std, left_x, right_x = analyze_image(
+        left_mrti, right_mrti, mrti_instability, mrti_instability_std, left_points, right_points, \
+        left_x, left_y, right_x, right_y = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -453,6 +462,7 @@ class EdgeGUI:
         # Store results
         self.image_settings[image_path] = {
             'pinch_radius': pinch_radius,
+            'radius_sem': radius_sem,
             'left_instability': left_instability,
             'right_instability': right_instability,
             'instability': instability,
@@ -477,8 +487,12 @@ class EdgeGUI:
             'N': N,
             'pinch_height': pinch_height,
             'total_points': total_points,
+            'left_points': left_points,
+            'right_points': right_points,
             'left_x': left_x,
-            'right_x': right_x
+            'left_y': left_y,
+            'right_x': right_x,
+            'right_y': right_y,
         }
 
 
@@ -502,13 +516,6 @@ class EdgeGUI:
         )
 
         result_text += f"Timing: {fmt(timing, ' ns')}" if timing is not None else "Timing: N/A"
-
-
-
-        if timing is not None:
-            result_text += f"Timing: {timing:.2f} ns"
-        else:
-            result_text += "Timing: N/A"
 
         self.result_label.config(text=result_text)
 
@@ -600,10 +607,25 @@ class EdgeGUI:
             if img_path == self.current_image:
                 filename = os.path.basename(img_path)
 
+                # Save boundary points as .npz
+                fits_folder = os.path.join(self.output_folder_path, "fits")
+                os.makedirs(fits_folder, exist_ok=True)
+
+                base_name = os.path.splitext(filename)[0]
+                npz_path = os.path.join(fits_folder, f"{base_name}_boundary_points.npz")
+
+                np.savez(npz_path,
+                         left_x=np.array(result.get('left_x', [])),
+                         left_y=np.array(result.get('left_y', [])),
+                         right_x=np.array(result.get('right_x', [])),
+                         right_y=np.array(result.get('right_y', [])))
+
+
                 # Create a row to append
                 row = {
                     'Image': filename,
                     'Pinch Radius (mm)': result['pinch_radius'],
+                    'Radius SEM (mm)':result['radius_sem'],
                     'Left Instability Amplitude (mm)': result['left_instability'],
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
@@ -628,8 +650,8 @@ class EdgeGUI:
                     'N': result['N'],
                     'Pinch Height (mm)': result['pinch_height'],
                     'Total Points': result['total_points'] if result['total_points'] is not None else "",
-                    'Points in left boundary':result['left_x'],
-                    'Points in right boundary':result['right_x']
+                    'Points in left boundary':result['left_points'],
+                    'Points in right boundary':result['right_points']
                 }
 
                 # Check if this image already exists in the CSV, and update it if necessary
