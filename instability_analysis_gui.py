@@ -10,6 +10,19 @@ import os
 from matplotlib.path import Path
 import csv
 import pandas as pd
+from joblib import Parallel, delayed
+
+def autocorrelation_length(data):
+    data = data - np.mean(data)
+    n = len(data)
+    acf = np.correlate(data, data, mode='full')[n-1:] / np.correlate(data, data, mode='full')[n-1]
+    # Find where acf drops below 1/e
+    try:
+        lag_cutoff = np.where(acf < 1/np.e)[0][0]
+    except IndexError:
+        lag_cutoff = n  # no drop below threshold found
+    return max(lag_cutoff, 1)  # avoid zero division
+
 
 # Function to select edge points
 def select_points(x_list, mode, side, center):
@@ -141,11 +154,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.plot(right_x, right_y, 'ro', markersize=1)
 
     pinch_radius = instability = left_angle = right_angle = avg_angle = None
-    left_std = right_std = instability_std = None
-    left_iqr = right_iqr = instability_iqr = instability_iqr_std = None
+    left_std = right_std = instability_se = None
+    left_iqr = right_iqr = instability_iqr = instability_iqr_se = None
     angle_std = None
     left_mean = right_mean = None
-    left_mrti = right_mrti = mrti_instability = mrti_instability_std = None
+    left_mrti = right_mrti = mrti_instability = mrti_instability_se = None
 
     if left_x and right_x:
         left_coef = np.polyfit(left_y, left_x, 1)
@@ -161,18 +174,24 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         pxmm = hgt / pinch_height
         pinch_radius = (right_mean - left_mean) / 2 / pxmm
-        left_sem = np.std(left_x) / np.sqrt(len(left_x)) / pxmm
-        right_sem = np.std(right_x) / np.sqrt(len(right_x)) / pxmm
+        left_ac_len = autocorrelation_length(left_x)
+        right_ac_len = autocorrelation_length(right_x)
+
+        left_N_eff = len(left_x) / left_ac_len
+        right_N_eff = len(right_x) / right_ac_len
+
+        left_sem = np.std(left_x) / np.sqrt(left_N_eff) / pxmm
+        right_sem = np.std(right_x) / np.sqrt(right_N_eff) / pxmm
         radius_sem = np.sqrt(left_sem**2 + right_sem**2) / 2
+
 
         left_std = np.std(left_x) / pxmm
         right_std = np.std(right_x) / pxmm
         instability = (left_std + right_std) / 2
-        instability_std = np.std([left_std, right_std])
+
         left_iqr = (np.percentile(left_x, 75) - np.percentile(left_x, 25)) / pxmm
         right_iqr = (np.percentile(right_x, 75) - np.percentile(right_x, 25)) / pxmm
         instability_iqr = (left_iqr + right_iqr) / 2
-        instability_iqr_std = np.std([left_iqr, right_iqr])
 
         left_slope = left_coef[0]
         right_slope = right_coef[0]
@@ -186,7 +205,54 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         left_mrti = np.std(left_res / pxmm)
         right_mrti = np.std(right_res / pxmm)
         mrti_instability = (left_mrti + right_mrti) / 2
-        mrti_instability_std = np.std([left_mrti, right_mrti])
+
+        n_boot = 500  # adjust for speed/accuracy trade-off
+
+        left_x = np.array(left_x)
+        right_x = np.array(right_x)
+        left_y = np.array(left_y)
+        right_y = np.array(right_y)
+
+        # === VECTORIZED BOOTSTRAP FOR STD INSTABILITY ===
+        left_samples = np.random.choice(left_x, size=(n_boot, len(left_x)), replace=True)
+        right_samples = np.random.choice(right_x, size=(n_boot, len(right_x)), replace=True)
+
+        left_std_samples = np.std(left_samples, axis=1) / pxmm
+        right_std_samples = np.std(right_samples, axis=1) / pxmm
+        instability_boot = (left_std_samples + right_std_samples) / 2
+        instability_se = np.std(instability_boot)
+
+        # === VECTORIZED BOOTSTRAP FOR IQR INSTABILITY ===
+        left_iqr_samples = (np.percentile(left_samples, 75, axis=1) - np.percentile(left_samples, 25, axis=1)) / pxmm
+        right_iqr_samples = (np.percentile(right_samples, 75, axis=1) - np.percentile(right_samples, 25, axis=1)) / pxmm
+        iqr_boot = (left_iqr_samples + right_iqr_samples) / 2
+        instability_iqr_se = np.std(iqr_boot)
+
+        # === PARALLEL BOOTSTRAP FOR MRTI INSTABILITY ===
+        def bootstrap_mrti():
+            li = np.random.choice(len(left_x), size=len(left_x), replace=True)
+            ri = np.random.choice(len(right_x), size=len(right_x), replace=True)
+
+            lx_b, ly_b = left_x[li], left_y[li]
+            rx_b, ry_b = right_x[ri], right_y[ri]
+
+            if np.ptp(ly_b) < 1e-5 or np.ptp(ry_b) < 1e-5:  # ptp = max-min, check if y variation is too small
+                return None  # skip this bootstrap iteration
+
+            lc = np.polyfit(ly_b, lx_b, 1)
+            rc = np.polyfit(ry_b, rx_b, 1)
+
+            left_res_b = lx_b - np.poly1d(lc)(ly_b)
+            right_res_b = rx_b - np.poly1d(rc)(ry_b)
+
+            l_mrti = np.std(left_res_b / pxmm)
+            r_mrti = np.std(right_res_b / pxmm)
+            return (l_mrti + r_mrti) / 2
+
+        boot_mrti = Parallel(n_jobs=-1)(delayed(bootstrap_mrti)() for _ in range(n_boot))
+        boot_mrti = [x for x in boot_mrti if x is not None]  # remove failed samples
+        mrti_instability_se = np.std(boot_mrti)
+
 
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
@@ -197,10 +263,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     ax.axis('off')
 
     return (fig, pinch_radius, radius_sem, left_std, right_std, instability,
-        instability_std, left_angle, right_angle, avg_angle, angle_std,
+        instability_se, left_angle, right_angle, avg_angle, angle_std,
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr,
-        instability_iqr_std, left_mrti, right_mrti, mrti_instability,
-        mrti_instability_std, len(left_x), len(right_x), left_x, left_y, right_x, right_y)
+        instability_iqr_se, left_mrti, right_mrti, mrti_instability,
+        mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x, right_y)
 
 
 # GUI Class
@@ -436,9 +502,9 @@ class EdgeGUI:
         total_points = self.total_points.get() if self.total_points.get()!=0 else None
 
         new_fig, pinch_radius, radius_sem, left_instability, right_instability, \
-        instability, instability_std, left_angle, right_angle, avg_angle, angle_std, \
-        left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_std, \
-        left_mrti, right_mrti, mrti_instability, mrti_instability_std, left_points, right_points, \
+        instability, instability_se, left_angle, right_angle, avg_angle, angle_std, \
+        left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_se, \
+        left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, right_points, \
         left_x, left_y, right_x, right_y = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
@@ -469,12 +535,12 @@ class EdgeGUI:
             'left_mrti': left_mrti,
             'right_mrti': right_mrti,
             'mrti_instability': mrti_instability,
-            'mrti_instability_std': mrti_instability_std,
-            'instability_std': instability_std,
+            'mrti_instability_se': mrti_instability_se,
+            'instability_se': instability_se,
             'left_iqr': left_iqr,
             'right_iqr': right_iqr,
             'instability_iqr': instability_iqr,
-            'instability_iqr_std': instability_iqr_std,
+            'instability_iqr_se': instability_iqr_se,
             'left_angle': left_angle,
             'right_angle': right_angle,
             'avg_angle': avg_angle,
@@ -498,22 +564,17 @@ class EdgeGUI:
 
         # Display
         result_text = (
-            f"Pinch Radius: {fmt(pinch_radius, ' mm')}\n"
-            #f"Left Instability Amplitude: {fmt(left_instability, ' mm')}\n"
-            #f"Right Instability Amplitude: {fmt(right_instability, ' mm')}\n"
-            f"Avg. Instability Amplitude: {fmt(instability, ' mm')}\n"
-            #f"Instability Amplitude Std.: {fmt(instability_std, ' mm')}\n"
-            f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')}\n"
-            #f"MRTI Instability Std.: {fmt(mrti_instability_std, ' mm')}\n"
-            #f"Left Instability Amplitude - IQR: {fmt(left_iqr, ' mm')}\n"
-            #f"Right Instability Amplitude - IQR: {fmt(right_iqr, ' mm')}\n"
-            f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')}\n"
-            #f"Instability Amplitude Std. - IQR: {fmt(instability_iqr_std, ' mm')}\n"
+            f"Pinch Radius: {fmt(pinch_radius, ' mm')} ± {fmt(radius_sem, ' mm')}\n"
+            # f"Left Instability Amplitude: {fmt(left_instability, ' mm')}\n"
+            # f"Right Instability Amplitude: {fmt(right_instability, ' mm')}\n"
+            f"Avg. Instability Amplitude: {fmt(instability, ' mm')} ± {fmt(instability_se, ' mm')}\n"
+            f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')} ± {fmt(mrti_instability_se, ' mm')}\n"
+            f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
             f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
             f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
-            f"Avg. Flaring Angle: {fmt(avg_angle, '°')}\n"
-            #f"Flare Angle Std.: {fmt(angle_std, '°')}\n"
+            f"Avg. Flaring Angle: {fmt(avg_angle, '°')} ± {fmt(angle_std, '°')}\n"
         )
+
 
         result_text += f"Timing: {fmt(timing, ' ns')}" if timing is not None else "Timing: N/A"
 
@@ -625,19 +686,19 @@ class EdgeGUI:
                 row = {
                     'Image': filename,
                     'Pinch Radius (mm)': result['pinch_radius'],
-                    'Radius SEM (mm)':result['radius_sem'],
+                    'Radius SEM (mm)': result['radius_sem'],
                     'Left Instability Amplitude (mm)': result['left_instability'],
                     'Right Instability Amplitude (mm)': result['right_instability'],
                     'Avg Instability Amplitude (mm)': result['instability'],
-                    'Instability Amplitude std (mm)': result['instability_std'],
+                    'Instability Amplitude SE (mm)': result['instability_se'],
                     'Left Instability MRTI (mm)': result['left_mrti'],
                     'Right Instability MRTI (mm)': result['right_mrti'],
                     'MRTI Instability (mm)': result['mrti_instability'],
-                    'MRTI Instability std (mm)': result['mrti_instability_std'],
+                    'MRTI Instability SE (mm)': result['mrti_instability_se'],
                     'Left Instability Amplitude IQR (mm)': result['left_iqr'],
                     'Right Instability Amplitude IQR (mm)': result['right_iqr'],
                     'Avg Instability Amplitude IQR (mm)': result['instability_iqr'],
-                    'Instability Amplitude std IQR (mm)': result['instability_iqr_std'],
+                    'Instability Amplitude SE IQR (mm)': result['instability_iqr_se'],
                     'Left Flaring Angle (deg)': result['left_angle'],
                     'Right Flaring Angle (deg)': result['right_angle'],
                     'Avg Flaring Angle (deg)': result['avg_angle'],
