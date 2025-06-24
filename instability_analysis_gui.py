@@ -60,7 +60,8 @@ def in_forbidden_zone(x, y, zones):
 
 # Image analysis function
 def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_height=13.5,
-                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True, title=None, total_points=None):
+                  point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True,
+                  title=None, total_points=None, resolution=None):
     if forbidden_zones is None:
         forbidden_zones = []
 
@@ -143,6 +144,16 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
                         break
                     right_x.append(x)
                     right_y.append(y)
+        # Sort left and right points by y
+        left_points = sorted(zip(left_y, left_x))
+        right_points = sorted(zip(right_y, right_x))
+
+        left_y, left_x = zip(*left_points) if left_points else ([], [])
+        right_y, right_x = zip(*right_points) if right_points else ([], [])
+
+        left_x, left_y = list(left_x), list(left_y)
+        right_x, right_y = list(right_x), list(right_y)
+
 
     image_color = cv2.cvtColor(im_array, cv2.COLOR_GRAY2RGB)
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -174,8 +185,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         pxmm = hgt / pinch_height
         pinch_radius = (right_mean - left_mean) / 2 / pxmm
-        left_ac_len = autocorrelation_length(left_x)
-        right_ac_len = autocorrelation_length(right_x)
+        left_res = np.array(left_x) - left_avg
+        right_res = np.array(right_x) - right_avg
+
+        left_ac_len = autocorrelation_length(left_res)
+        right_ac_len = autocorrelation_length(right_res)
 
         left_N_eff = len(left_x) / left_ac_len
         right_N_eff = len(right_x) / right_ac_len
@@ -183,7 +197,6 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         left_sem = np.std(left_x) / np.sqrt(left_N_eff) / pxmm
         right_sem = np.std(right_x) / np.sqrt(right_N_eff) / pxmm
         radius_sem = np.sqrt(left_sem**2 + right_sem**2) / 2
-
 
         left_std = np.std(left_x) / pxmm
         right_std = np.std(right_x) / pxmm
@@ -200,8 +213,6 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         avg_angle = (left_angle + right_angle) / 2
         angle_std = np.std([left_angle, right_angle])
 
-        left_res = np.array(left_x) - np.poly1d(left_coef)(left_y)
-        right_res = np.array(right_x) - np.poly1d(right_coef)(right_y)
         left_mrti = np.std(left_res / pxmm)
         right_mrti = np.std(right_res / pxmm)
         mrti_instability = (left_mrti + right_mrti) / 2
@@ -252,6 +263,12 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         boot_mrti = Parallel(n_jobs=-1)(delayed(bootstrap_mrti)() for _ in range(n_boot))
         boot_mrti = [x for x in boot_mrti if x is not None]  # remove failed samples
         mrti_instability_se = np.std(boot_mrti)
+
+    if resolution:
+        radius_sem = np.sqrt(radius_sem**2+resolution**2)
+        mrti_instability_se = np.sqrt(mrti_instability_se**2+resolution**2)
+        instability_se = np.sqrt(instability_se**2+resolution**2)
+        instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
 
 
     if draw_forbidden_zones:
@@ -374,6 +391,12 @@ class EdgeGUI:
         self.pinches_height_entry.insert(0, "13.5")
         self.pinches_height_entry.pack(anchor='w', pady=2)
         self.pinches_height_entry.bind("<FocusOut>", lambda event: self.update_plot())
+
+        Label(controls, text="Resolution (mm):").pack(anchor='w')
+        self.resolution_entry = Entry(controls)
+        self.resolution_entry.insert(0, "0.3")
+        self.resolution_entry.pack(anchor='w', pady=2)
+        self.resolution_entry.bind("<FocusOut>", lambda event: self.update_plot())
 
         self.clear_button = Button(controls, text="Clear Zones", command=self.clear_zones)
         self.clear_button.pack(anchor='w', pady=5)
@@ -498,8 +521,16 @@ class EdgeGUI:
         point_mode = self.point_mode_var.get()
         N = self.N_slider.get()
         pinch_height_str = self.pinches_height_entry.get()
-        pinch_height = float(pinch_height_str) if pinch_height_str else 13.5
+        try:
+            pinch_height = float(pinch_height_str)
+        except (ValueError, TypeError):
+            pinch_height = 13.5
         total_points = self.total_points.get() if self.total_points.get()!=0 else None
+        resolution_str = self.resolution_entry.get()
+        try:
+            resolution = float(resolution_str)
+        except (ValueError, TypeError):
+            resolution = None
 
         new_fig, pinch_radius, radius_sem, left_instability, right_instability, \
         instability, instability_se, left_angle, right_angle, avg_angle, angle_std, \
@@ -511,7 +542,8 @@ class EdgeGUI:
             forbidden_zones=self.forbidden_zones,
             draw_forbidden_zones=draw_forbidden_zones,
             title=image_name,
-            total_points = total_points
+            total_points = total_points,
+            resolution = resolution,
         )
 
         # Update plot
@@ -552,6 +584,7 @@ class EdgeGUI:
             'point_mode': point_mode,
             'N': N,
             'pinch_height': pinch_height,
+            'resolution': resolution,
             'total_points': total_points,
             'left_points': left_points,
             'right_points': right_points,
@@ -565,13 +598,13 @@ class EdgeGUI:
         # Display
         result_text = (
             f"Pinch Radius: {fmt(pinch_radius, ' mm')} ± {fmt(radius_sem, ' mm')}\n"
-            # f"Left Instability Amplitude: {fmt(left_instability, ' mm')}\n"
-            # f"Right Instability Amplitude: {fmt(right_instability, ' mm')}\n"
+            #f"Left MRTI Instability Amplitude: {fmt(left_mrti, ' mm')}\n"
+            #f"Right MRTI Instability Amplitude: {fmt(right_mrti, ' mm')}\n"
             f"Avg. Instability Amplitude: {fmt(instability, ' mm')} ± {fmt(instability_se, ' mm')}\n"
             f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')} ± {fmt(mrti_instability_se, ' mm')}\n"
             f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
-            f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
-            f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
+            #f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
+            #f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
             f"Avg. Flaring Angle: {fmt(avg_angle, '°')} ± {fmt(angle_std, '°')}\n"
         )
 
@@ -645,7 +678,8 @@ class EdgeGUI:
 
             # Save the figure
             self.fig.savefig(output_path, bbox_inches='tight', pad_inches=0.1)
-            messagebox.showinfo("Figure Saved", f"Figure saved to:\n{output_path}")
+            #messagebox.showinfo("Figure Saved", f"Figure saved to:\n{output_path}")
+            print("Figure Saved", f"Figure saved to:\n{output_path}")
 
     def write_results_to_csv(self):
         if not self.output_folder_path:
@@ -710,6 +744,7 @@ class EdgeGUI:
                     'Point Mode': result['point_mode'],
                     'N': result['N'],
                     'Pinch Height (mm)': result['pinch_height'],
+                    'Resolution (mm)': result['resolution'],
                     'Total Points': result['total_points'] if result['total_points'] is not None else "",
                     'Points in left boundary':result['left_points'],
                     'Points in right boundary':result['right_points']
