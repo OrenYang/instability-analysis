@@ -394,7 +394,7 @@ class EdgeGUI:
 
         Label(controls, text="Resolution (mm):").pack(anchor='w')
         self.resolution_entry = Entry(controls)
-        self.resolution_entry.insert(0, "0.3")
+        self.resolution_entry.insert(0, "0")
         self.resolution_entry.pack(anchor='w', pady=2)
         self.resolution_entry.bind("<FocusOut>", lambda event: self.update_plot())
 
