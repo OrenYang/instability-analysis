@@ -299,9 +299,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         # === FFT on half-width without detrending (shows zippering effects too) ===
         N_fft = len(half_width_mm)
+        N_pad = 2 * N_fft
         dz = np.mean(np.diff(z_mm))
-        fft_vals = rfft(half_width_mm)
-        fft_freqs = rfftfreq(N_fft, d=dz)  # cycles/mm
+        fft_vals = rfft(half_width_mm, n=N_pad)
+        fft_freqs = rfftfreq(N_pad, d=dz)  # cycles/mm
         power_spectrum = np.abs(fft_vals)**2
 
         # Wavelengths in mm (skip zero freq)
@@ -316,7 +317,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         half_width_mm_detrended = detrend(half_width_mm, type='linear')
 
         # === FFT on detrended half-width ===
-        fft_vals_detrended = rfft(half_width_mm_detrended)
+        fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
         power_spectrum_detrended = np.abs(fft_vals_detrended)**2
 
         fft_wavelengths_detrended = 1 / fft_freqs[1:]
@@ -326,7 +327,6 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
         dominant_idx_detrended = np.argmax(fft_power_detrended)
         dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
-
 
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
@@ -740,16 +740,12 @@ class EdgeGUI:
                 return
 
             self.ax.clear()
-            line1, = self.ax.plot(2*np.pi/fft_wavelengths, fft_power, alpha=0.6, label='Original',)
+            k = 2*np.pi/fft_wavelengths
+            self.ax.plot(k, fft_power, alpha=0.6, label='Original',)
 
             if fft_wavelengths_detrended is not None and fft_power_detrended is not None:
-                self.ax.plot(2*np.pi/fft_wavelengths_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
-                #ax2 = self.ax.twinx()
-                #line2, = ax2.plot(2*np.pi/fft_wavelengths_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
-                #lines = [line1, line2]
-                #labels = [line.get_label() for line in lines]
-                #self.ax.legend(lines, labels)
-                #ax2.set_yscale('log')
+                k_detrended = 2*np.pi/fft_wavelengths_detrended
+                self.ax.plot(k_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
             self.ax.legend()
 
             self.ax.set_yscale('log')
@@ -758,10 +754,13 @@ class EdgeGUI:
             self.ax.set_title(f"FFT Wavelength Spectrum\n{os.path.basename(self.current_image)}")
             self.ax.grid(True, linestyle='--', alpha=0.5)
 
-            if len(fft_wavelengths) > 1:
-                xmin = min(fft_wavelengths)
-                xmax = max(fft_wavelengths)
+            if len(k) > 1:
+                xmin = min(k)
+                xmax = max(k)
+                xmax = 30
                 self.ax.set_xlim(xmin, xmax)
+
+            self.ax.set_ylim(1e-5)
 
             self.ax.set_aspect("auto")
             self.current_view = "fft"
