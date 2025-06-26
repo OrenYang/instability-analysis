@@ -4,3 +4,4 @@ matplotlib
 Pillow
 pandas
 joblib
+scipy

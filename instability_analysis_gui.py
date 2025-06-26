@@ -11,6 +11,18 @@ from matplotlib.path import Path
 import csv
 import pandas as pd
 from joblib import Parallel, delayed
+from scipy.fft import rfft, rfftfreq
+from scipy.signal import detrend
+
+
+def single_valued_profile(xs, ys, agg=np.median):
+    y_to_x = defaultdict(list)
+    for x, y in zip(xs, ys):
+        y_to_x[y].append(x)
+    ys_sorted = sorted(y_to_x.keys())
+    xs_agg = [agg(y_to_x[y]) for y in ys_sorted]
+    return np.array(ys_sorted), np.array(xs_agg)
+
 
 def autocorrelation_length(data):
     data = data - np.mean(data)
@@ -264,11 +276,56 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         boot_mrti = [x for x in boot_mrti if x is not None]  # remove failed samples
         mrti_instability_se = np.std(boot_mrti)
 
-    if resolution:
-        radius_sem = np.sqrt(radius_sem**2+resolution**2)
-        mrti_instability_se = np.sqrt(mrti_instability_se**2+resolution**2)
-        instability_se = np.sqrt(instability_se**2+resolution**2)
-        instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
+        if resolution:
+            radius_sem = np.sqrt(radius_sem**2+resolution**2)
+            mrti_instability_se = np.sqrt(mrti_instability_se**2+resolution**2)
+            instability_se = np.sqrt(instability_se**2+resolution**2)
+            instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
+
+        # Median x values for each y
+        left_y_single, left_x_single = single_valued_profile(left_x, left_y, agg=np.min)
+        right_y_single, right_x_single = single_valued_profile(right_x, right_y, agg=np.max)
+
+        # Only keep y-values that exist in both sides
+        common_y = np.intersect1d(left_y_single, right_y_single)
+        left_dict = dict(zip(left_y_single, left_x_single))
+        right_dict = dict(zip(right_y_single, right_x_single))
+        half_width_px = np.array([(right_dict[y] - left_dict[y]) / 2 for y in common_y])
+        z_vals = common_y
+
+        # Convert to mm
+        z_mm = z_vals / pxmm
+        half_width_mm = half_width_px / pxmm
+
+        # === FFT on half-width without detrending (shows zippering effects too) ===
+        N_fft = len(half_width_mm)
+        dz = np.mean(np.diff(z_mm))
+        fft_vals = rfft(half_width_mm)
+        fft_freqs = rfftfreq(N_fft, d=dz)  # cycles/mm
+        power_spectrum = np.abs(fft_vals)**2
+
+        # Wavelengths in mm (skip zero freq)
+        fft_wavelengths = 1 / fft_freqs[1:]
+        fft_power = power_spectrum[1:]
+        fft_power = fft_power / np.max(fft_power) if np.max(fft_power) > 0 else fft_power
+
+        dominant_fft_idx = np.argmax(fft_power)
+        dominant_wavelength = fft_wavelengths[dominant_fft_idx]  # in mm
+
+        # Detrend half-width (remove linear trend caused by zippering)
+        half_width_mm_detrended = detrend(half_width_mm, type='linear')
+
+        # === FFT on detrended half-width ===
+        fft_vals_detrended = rfft(half_width_mm_detrended)
+        power_spectrum_detrended = np.abs(fft_vals_detrended)**2
+
+        fft_wavelengths_detrended = 1 / fft_freqs[1:]
+        fft_power_detrended = power_spectrum_detrended[1:]
+        fft_power_detrended = fft_power_detrended / np.max(fft_power_detrended) if np.max(fft_power_detrended) > 0 else fft_power_detrended
+
+
+        dominant_idx_detrended = np.argmax(fft_power_detrended)
+        dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
 
 
     if draw_forbidden_zones:
@@ -283,7 +340,9 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         instability_se, left_angle, right_angle, avg_angle, angle_std,
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr,
         instability_iqr_se, left_mrti, right_mrti, mrti_instability,
-        mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x, right_y)
+        mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x,
+        right_y, dominant_wavelength, fft_wavelengths, fft_power,
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended)
 
 
 # GUI Class
@@ -301,6 +360,7 @@ class EdgeGUI:
         self.timing_df = None
         self.image_settings = {}  # Store results per image
         self.current_image = None
+        self.current_view = "analysis"
 
 
         main_frame = Frame(root)
@@ -408,6 +468,9 @@ class EdgeGUI:
         self.output_path_label = Label(controls, text="No output folder selected", justify='left', anchor='w', wraplength=200, font=("Arial", 10))
         self.output_path_label.pack(anchor='w', padx=5, pady=10)
 
+        self.toggle_fft_button = Button(controls, text="Toggle FFT View", command=self.toggle_fft_view)
+        self.toggle_fft_button.pack(anchor='w', pady=5)
+
         self.save_image_button = Button(controls, text="Save Image", command=self.save_image)
         self.save_image_button.pack(anchor='w', pady=5)
 
@@ -492,6 +555,8 @@ class EdgeGUI:
     def update_plot(self, draw_forbidden_zones=True):
         if self.current_index == -1 or not self.image_list:
             return
+        self.current_view = "analysis"
+        self.toggle_fft_button.config(text="Toggle FFT View")
 
         image_path = self.image_list[self.current_index]
         image_name = os.path.basename(image_path)
@@ -535,8 +600,10 @@ class EdgeGUI:
         new_fig, pinch_radius, radius_sem, left_instability, right_instability, \
         instability, instability_se, left_angle, right_angle, avg_angle, angle_std, \
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_se, \
-        left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, right_points, \
-        left_x, left_y, right_x, right_y = analyze_image(
+        left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, \
+        right_points, left_x, left_y, right_x, right_y, \
+        dominant_wavelength, fft_wavelengths, fft_power, \
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -592,6 +659,12 @@ class EdgeGUI:
             'left_y': left_y,
             'right_x': right_x,
             'right_y': right_y,
+            'dominant_wavelength': dominant_wavelength,
+            'dominant_wavelength_detrended': dominant_wavelength_detrended,
+            'fft_wavelengths': fft_wavelengths,
+            'fft_power': fft_power,
+            'fft_wavelengths_detrended': fft_wavelengths_detrended,
+            'fft_power_detrended': fft_power_detrended,
         }
 
 
@@ -602,7 +675,8 @@ class EdgeGUI:
             #f"Right MRTI Instability Amplitude: {fmt(right_mrti, ' mm')}\n"
             f"Avg. Instability Amplitude: {fmt(instability, ' mm')} ± {fmt(instability_se, ' mm')}\n"
             f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')} ± {fmt(mrti_instability_se, ' mm')}\n"
-            f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
+            f"Dominant Wavelength: {fmt(dominant_wavelength, ' mm')} ; detrended: {fmt(dominant_wavelength_detrended, ' mm')}\n"
+            #f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
             #f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
             #f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
             f"Avg. Flaring Angle: {fmt(avg_angle, '°')} ± {fmt(angle_std, '°')}\n"
@@ -646,6 +720,61 @@ class EdgeGUI:
     def clear_zones(self):
         self.forbidden_zones.clear()
         self.update_plot()
+
+    def toggle_fft_view(self):
+        if self.current_image not in self.image_settings:
+            messagebox.showwarning("No Data", "No analysis data available for the current image.")
+            return
+
+        data = self.image_settings[self.current_image]
+
+        if self.current_view == "analysis":
+            # Switch to FFT view
+            fft_wavelengths = data.get("fft_wavelengths")
+            fft_power = data.get("fft_power")
+            fft_wavelengths_detrended = data.get("fft_wavelengths_detrended")
+            fft_power_detrended = data.get("fft_power_detrended")
+
+            if fft_wavelengths is None or fft_power is None:
+                messagebox.showerror("Error", "FFT data is missing.")
+                return
+
+            self.ax.clear()
+            line1, = self.ax.plot(2*np.pi/fft_wavelengths, fft_power, alpha=0.6, label='Original',)
+
+            if fft_wavelengths_detrended is not None and fft_power_detrended is not None:
+                self.ax.plot(2*np.pi/fft_wavelengths_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
+                #ax2 = self.ax.twinx()
+                #line2, = ax2.plot(2*np.pi/fft_wavelengths_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
+                #lines = [line1, line2]
+                #labels = [line.get_label() for line in lines]
+                #self.ax.legend(lines, labels)
+                #ax2.set_yscale('log')
+            self.ax.legend()
+
+            self.ax.set_yscale('log')
+            self.ax.set_xlabel("k (rad/mm)")
+            self.ax.set_ylabel("FFT Power")
+            self.ax.set_title(f"FFT Wavelength Spectrum\n{os.path.basename(self.current_image)}")
+            self.ax.grid(True, linestyle='--', alpha=0.5)
+
+            if len(fft_wavelengths) > 1:
+                xmin = min(fft_wavelengths)
+                xmax = max(fft_wavelengths)
+                self.ax.set_xlim(xmin, xmax)
+
+            self.ax.set_aspect("auto")
+            self.current_view = "fft"
+            self.toggle_fft_button.config(text="Back to Analysis")
+
+        else:
+            self.current_view = "analysis"
+            self.toggle_fft_button.config(text="Toggle FFT View")
+            self.update_plot(draw_forbidden_zones=True)
+            return
+        self.fig.tight_layout()
+        self.canvas.draw()
+
 
     def restore_settings(self):
         image_path = self.image_list[self.current_index]
@@ -715,6 +844,14 @@ class EdgeGUI:
                          right_x=np.array(result.get('right_x', [])),
                          right_y=np.array(result.get('right_y', [])))
 
+                npz_path = os.path.join(fits_folder, f"{base_name}_fft.npz")
+
+                np.savez(npz_path,
+                         fft_wavelengths=np.array(result.get('fft_wavelengths', [])),
+                         fft_power=np.array(result.get('fft_power', [])),
+                         fft_wavelengths_detrended=np.array(result.get('fft_wavelengths_detrended', [])),
+                         fft_power_detrended=np.array(result.get('fft_power_detrended', [])))
+
 
                 # Create a row to append
                 row = {
@@ -746,8 +883,10 @@ class EdgeGUI:
                     'Pinch Height (mm)': result['pinch_height'],
                     'Resolution (mm)': result['resolution'],
                     'Total Points': result['total_points'] if result['total_points'] is not None else "",
-                    'Points in left boundary':result['left_points'],
-                    'Points in right boundary':result['right_points']
+                    'Points in left boundary': result['left_points'],
+                    'Points in right boundary': result['right_points'],
+                    'Dominant Wavelength (mm)': result['dominant_wavelength'],
+                    'Dominant wavelength detrended (mm)': result['dominant_wavelength_detrended']
                 }
 
                 # Check if this image already exists in the CSV, and update it if necessary
