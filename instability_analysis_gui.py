@@ -511,16 +511,47 @@ class EdgeGUI:
             self.update_plot()
 
     def load_timing_file(self):
-        file_path = filedialog.askopenfilename(title="Select timing file", filetypes=[("*.csv *.xlsx")])
+        file_path = filedialog.askopenfilename(
+            title="Select timing file",
+            filetypes=[("Excel or CSV files", "*.csv *.xlsx")]
+        )
         if file_path:
-            df = pd.read_excel(file_path, header=None)
+            # Load Excel or CSV
+            if file_path.endswith(".csv"):
+                df = pd.read_csv(file_path, header=None)
+            else:
+                df = pd.read_excel(file_path, header=None)
 
-            # Adjust df labels to index by shot number and "mcpx frame x"
-            df.columns = df.iloc[0]
-            df = df[1:].reset_index(drop=True)
-            df.set_index(df.columns[0], inplace=True)
-            df.columns = df.columns.astype(int)
+            # Peek at first row and column to determine layout
+            first_row = df.iloc[0, 1:]
+            first_col = df.iloc[1:, 0]
+
+            def looks_like_shot_numbers(series):
+                return pd.to_numeric(series, errors='coerce').notnull().mean() > 0.8
+
+            if looks_like_shot_numbers(first_row):
+                # first row = shot numbers
+                df.columns = df.iloc[0]
+                df = df[1:].reset_index(drop=True)
+                df.set_index(df.columns[0], inplace=True)
+            elif looks_like_shot_numbers(first_col):
+                # first column = shot numbers
+                df = df.T
+                df.columns = df.iloc[0]
+                df = df[1:].reset_index(drop=True)
+                df.set_index(df.columns[0], inplace=True)
+            else:
+                messagebox.showerror("Timing File Error", "Could not identify shot numbers in the file.")
+                return
+
+            try:
+                df.columns = df.columns.astype(int)
+            except ValueError:
+                messagebox.showerror("Timing File Error", "Shot numbers could not be converted to integers.")
+                return
+
             self.timing_df = df
+
 
     def show_timing_help(self, event=None):
         help_text = (
@@ -528,7 +559,12 @@ class EdgeGUI:
             "- The first row contains shot numbers.\n"
             "- The first column contains labels like 'mcpx frame x'.\n"
             "- The cell at (row='mcpx frame x', column=shot number) gives the timing in µs.\n\n"
-            "Make sure the camera/frame names in image filenames match this format: 1234_MCP1_1.jpg, 1234_SCH_2.jpg, ..."
+            "Alternatively, the file may be transposed:\n"
+            "- The first row contains frame labels.\n"
+            "- The first column contains shot numbers.\n"
+            "- It will be transposed automatically if needed.\n\n"
+            "Make sure the camera/frame names in image filenames match this format:\n"
+            "1234_MCP1_1.jpg, 1234_SCH_2.jpg, ..."
         )
         messagebox.showinfo("Timing File Help", help_text)
 
