@@ -177,11 +177,12 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         ax.plot(right_x, right_y, 'ro', markersize=1)
 
     pinch_radius = instability = left_angle = right_angle = avg_angle = None
-    left_std = right_std = instability_se = None
+    left_std = right_std = instability_se = radius_sem = None
     left_iqr = right_iqr = instability_iqr = instability_iqr_se = None
-    angle_std = None
-    left_mean = right_mean = None
+    left_mean = right_mean = angle_std = None
     left_mrti = right_mrti = mrti_instability = mrti_instability_se = None
+    dominant_wavelength = fft_wavelengths = fft_power = None
+    dominant_wavelength_detrended = fft_wavelengths_detrended = fft_power_detrended = None
 
     if left_x and right_x:
         left_coef = np.polyfit(left_y, left_x, 1)
