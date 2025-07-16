@@ -301,33 +301,34 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         # === FFT on half-width without detrending (shows zippering effects too) ===
         N_fft = len(half_width_mm)
         N_pad = 2 * N_fft
-        dz = np.mean(np.diff(z_mm))
-        fft_vals = rfft(half_width_mm, n=N_pad)
-        fft_freqs = rfftfreq(N_pad, d=dz)  # cycles/mm
-        power_spectrum = np.abs(fft_vals)**2
+        if N_pad > 0:
+            dz = np.mean(np.diff(z_mm))
+            fft_vals = rfft(half_width_mm, n=N_pad)
+            fft_freqs = rfftfreq(N_pad, d=dz)  # cycles/mm
+            power_spectrum = np.abs(fft_vals)**2
 
-        # Wavelengths in mm (skip zero freq)
-        fft_wavelengths = 1 / fft_freqs[1:]
-        fft_power = power_spectrum[1:]
-        fft_power = fft_power / np.max(fft_power) if np.max(fft_power) > 0 else fft_power
+            # Wavelengths in mm (skip zero freq)
+            fft_wavelengths = 1 / fft_freqs[1:]
+            fft_power = power_spectrum[1:]
+            fft_power = fft_power / np.max(fft_power) if np.max(fft_power) > 0 else fft_power
 
-        dominant_fft_idx = np.argmax(fft_power)
-        dominant_wavelength = fft_wavelengths[dominant_fft_idx]  # in mm
+            dominant_fft_idx = np.argmax(fft_power)
+            dominant_wavelength = fft_wavelengths[dominant_fft_idx]  # in mm
 
-        # Detrend half-width (remove linear trend caused by zippering)
-        half_width_mm_detrended = detrend(half_width_mm, type='linear')
+            # Detrend half-width (remove linear trend caused by zippering)
+            half_width_mm_detrended = detrend(half_width_mm, type='linear')
 
-        # === FFT on detrended half-width ===
-        fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
-        power_spectrum_detrended = np.abs(fft_vals_detrended)**2
+            # === FFT on detrended half-width ===
+            fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
+            power_spectrum_detrended = np.abs(fft_vals_detrended)**2
 
-        fft_wavelengths_detrended = 1 / fft_freqs[1:]
-        fft_power_detrended = power_spectrum_detrended[1:]
-        fft_power_detrended = fft_power_detrended / np.max(fft_power_detrended) if np.max(fft_power_detrended) > 0 else fft_power_detrended
+            fft_wavelengths_detrended = 1 / fft_freqs[1:]
+            fft_power_detrended = power_spectrum_detrended[1:]
+            fft_power_detrended = fft_power_detrended / np.max(fft_power_detrended) if np.max(fft_power_detrended) > 0 else fft_power_detrended
 
 
-        dominant_idx_detrended = np.argmax(fft_power_detrended)
-        dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
+            dominant_idx_detrended = np.argmax(fft_power_detrended)
+            dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
 
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
@@ -720,7 +721,7 @@ class EdgeGUI:
         )
 
 
-        result_text += f"Timing: {fmt(timing, ' ns')}" if timing is not None else "Timing: N/A"
+        result_text += "Timing: {} ns".format(timing) if timing is not None else "Timing: N/A"
 
         self.result_label.config(text=result_text)
 
