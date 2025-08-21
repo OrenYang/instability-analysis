@@ -181,8 +181,8 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     left_iqr = right_iqr = instability_iqr = instability_iqr_se = None
     left_mean = right_mean = angle_std = None
     left_mrti = right_mrti = mrti_instability = mrti_instability_se = None
-    dominant_wavelength = fft_wavelengths = fft_power = None
-    dominant_wavelength_detrended = fft_wavelengths_detrended = fft_power_detrended = None
+    dominant_wavelength = fft_wavelengths = fft_power = fft_psd = None
+    dominant_wavelength_detrended = fft_wavelengths_detrended = fft_power_detrended = fft_psd_detrended = None
 
     if left_x and right_x:
         left_coef = np.polyfit(left_y, left_x, 1)
