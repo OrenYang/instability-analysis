@@ -283,7 +283,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             instability_se = np.sqrt(instability_se**2+resolution**2)
             instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
 
-        # Median x values for each y
+        # outer x values for each y
         left_y_single, left_x_single = single_valued_profile(left_x, left_y, agg=np.min)
         right_y_single, right_x_single = single_valued_profile(right_x, right_y, agg=np.max)
 
@@ -303,14 +303,18 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         N_pad = 2 * N_fft
         if N_pad > 0:
             dz = np.mean(np.diff(z_mm))
+            L = N_fft*dz
             fft_vals = rfft(half_width_mm, n=N_pad)
             fft_freqs = rfftfreq(N_pad, d=dz)  # cycles/mm
             power_spectrum = np.abs(fft_vals)**2
 
+            df = fft_freqs[1] - fft_freqs[0]   # frequency resolution
+            psd = (1.0 / (L)) * (np.abs(fft_vals)**2) / df
+
             # Wavelengths in mm (skip zero freq)
             fft_wavelengths = 1 / fft_freqs[1:]
             fft_power = power_spectrum[1:]
-            fft_power = fft_power / np.max(fft_power) if np.max(fft_power) > 0 else fft_power
+            fft_psd = psd[1:]
 
             dominant_fft_idx = np.argmax(fft_power)
             dominant_wavelength = fft_wavelengths[dominant_fft_idx]  # in mm
@@ -321,10 +325,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             # === FFT on detrended half-width ===
             fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
             power_spectrum_detrended = np.abs(fft_vals_detrended)**2
+            psd_detrended = (1.0 / (L)) * (np.abs(fft_vals_detrended)**2) / df
 
             fft_wavelengths_detrended = 1 / fft_freqs[1:]
             fft_power_detrended = power_spectrum_detrended[1:]
-            fft_power_detrended = fft_power_detrended / np.max(fft_power_detrended) if np.max(fft_power_detrended) > 0 else fft_power_detrended
+            fft_psd_detrended = psd_detrended[1:]
 
 
             dominant_idx_detrended = np.argmax(fft_power_detrended)
@@ -343,8 +348,8 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr,
         instability_iqr_se, left_mrti, right_mrti, mrti_instability,
         mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x,
-        right_y, dominant_wavelength, fft_wavelengths, fft_power,
-        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended)
+        right_y, dominant_wavelength, fft_wavelengths, fft_power, fft_psd,
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended)
 
 
 # GUI Class
@@ -640,8 +645,8 @@ class EdgeGUI:
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_se, \
         left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, \
         right_points, left_x, left_y, right_x, right_y, \
-        dominant_wavelength, fft_wavelengths, fft_power, \
-        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended = analyze_image(
+        dominant_wavelength, fft_wavelengths, fft_power, fft_psd, \
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -701,8 +706,10 @@ class EdgeGUI:
             'dominant_wavelength_detrended': dominant_wavelength_detrended,
             'fft_wavelengths': fft_wavelengths,
             'fft_power': fft_power,
+            'fft_psd': fft_psd,
             'fft_wavelengths_detrended': fft_wavelengths_detrended,
             'fft_power_detrended': fft_power_detrended,
+            'fft_psd_detrended': fft_psd_detrended,
         }
 
 
@@ -770,26 +777,28 @@ class EdgeGUI:
             # Switch to FFT view
             fft_wavelengths = data.get("fft_wavelengths")
             fft_power = data.get("fft_power")
+            fft_psd = data.get("fft_psd")
             fft_wavelengths_detrended = data.get("fft_wavelengths_detrended")
             fft_power_detrended = data.get("fft_power_detrended")
+            fft_psd_detrended = data.get("fft_psd_detrended")
 
-            if fft_wavelengths is None or fft_power is None:
+            if fft_wavelengths is None or fft_psd is None:
                 messagebox.showerror("Error", "FFT data is missing.")
                 return
 
             self.ax.clear()
             k = 2*np.pi/fft_wavelengths
-            self.ax.plot(k, fft_power, alpha=0.6, label='Original',)
+            self.ax.plot(k, fft_psd, alpha=0.6, label='Original',)
 
-            if fft_wavelengths_detrended is not None and fft_power_detrended is not None:
+            if fft_wavelengths_detrended is not None and fft_psd_detrended is not None:
                 k_detrended = 2*np.pi/fft_wavelengths_detrended
-                self.ax.plot(k_detrended, fft_power_detrended, alpha=0.6, label='Detrended', color='orange')
+                self.ax.plot(k_detrended, fft_psd_detrended, alpha=0.6, label='Detrended', color='orange')
             self.ax.legend()
 
             self.ax.set_yscale('log')
             self.ax.set_xlabel("k (rad/mm)")
-            self.ax.set_ylabel("FFT Power")
-            self.ax.set_title(f"FFT Wavelength Spectrum\n{os.path.basename(self.current_image)}")
+            self.ax.set_ylabel("PSD")
+            self.ax.set_title(f"FFT\n{os.path.basename(self.current_image)}")
             self.ax.grid(True, linestyle='--', alpha=0.5)
 
             if len(k) > 1:
@@ -886,8 +895,11 @@ class EdgeGUI:
                 np.savez(npz_path,
                          fft_wavelengths=np.array(result.get('fft_wavelengths', [])),
                          fft_power=np.array(result.get('fft_power', [])),
+                         fft_psd=np.array(result.get('fft_psd', [])),
                          fft_wavelengths_detrended=np.array(result.get('fft_wavelengths_detrended', [])),
-                         fft_power_detrended=np.array(result.get('fft_power_detrended', [])))
+                         fft_power_detrended=np.array(result.get('fft_power_detrended', [])),
+                         fft_psd_detrended=np.array(result.get('fft_psd_detrended', [])),
+                         )
 
 
                 # Create a row to append
