@@ -14,6 +14,7 @@ from joblib import Parallel, delayed
 from scipy.fft import rfft, rfftfreq
 from scipy.signal import detrend
 
+bootstrap = False
 
 def single_valued_profile(xs, ys, agg=np.median):
     y_to_x = defaultdict(list)
@@ -73,7 +74,7 @@ def in_forbidden_zone(x, y, zones):
 # Image analysis function
 def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_height=13.5,
                   point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True,
-                  title=None, total_points=None, resolution=None):
+                  title=None, total_points=None, resolution=None, bootstrap=False):
     if forbidden_zones is None:
         forbidden_zones = []
 
@@ -183,6 +184,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     left_mrti = right_mrti = mrti_instability = mrti_instability_se = None
     dominant_wavelength = fft_wavelengths = fft_power = fft_psd = None
     dominant_wavelength_detrended = fft_wavelengths_detrended = fft_power_detrended = fft_psd_detrended = None
+    fft_wavelengths_left = fft_psd_left = fft_psd_left_detr = fft_wavelengths_right = fft_psd_right = fft_psd_right_detr = None
 
     if left_x and right_x:
         left_coef = np.polyfit(left_y, left_x, 1)
@@ -237,45 +239,46 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         left_y = np.array(left_y)
         right_y = np.array(right_y)
 
-        # === VECTORIZED BOOTSTRAP FOR STD INSTABILITY ===
-        left_samples = np.random.choice(left_x, size=(n_boot, len(left_x)), replace=True)
-        right_samples = np.random.choice(right_x, size=(n_boot, len(right_x)), replace=True)
+        if bootstrap:
+            # === VECTORIZED BOOTSTRAP FOR STD INSTABILITY ===
+            left_samples = np.random.choice(left_x, size=(n_boot, len(left_x)), replace=True)
+            right_samples = np.random.choice(right_x, size=(n_boot, len(right_x)), replace=True)
 
-        left_std_samples = np.std(left_samples, axis=1) / pxmm
-        right_std_samples = np.std(right_samples, axis=1) / pxmm
-        instability_boot = (left_std_samples + right_std_samples) / 2
-        instability_se = np.std(instability_boot)
+            left_std_samples = np.std(left_samples, axis=1) / pxmm
+            right_std_samples = np.std(right_samples, axis=1) / pxmm
+            instability_boot = (left_std_samples + right_std_samples) / 2
+            instability_se = np.std(instability_boot)
 
-        # === VECTORIZED BOOTSTRAP FOR IQR INSTABILITY ===
-        left_iqr_samples = (np.percentile(left_samples, 75, axis=1) - np.percentile(left_samples, 25, axis=1)) / pxmm
-        right_iqr_samples = (np.percentile(right_samples, 75, axis=1) - np.percentile(right_samples, 25, axis=1)) / pxmm
-        iqr_boot = (left_iqr_samples + right_iqr_samples) / 2
-        instability_iqr_se = np.std(iqr_boot)
+            # === VECTORIZED BOOTSTRAP FOR IQR INSTABILITY ===
+            left_iqr_samples = (np.percentile(left_samples, 75, axis=1) - np.percentile(left_samples, 25, axis=1)) / pxmm
+            right_iqr_samples = (np.percentile(right_samples, 75, axis=1) - np.percentile(right_samples, 25, axis=1)) / pxmm
+            iqr_boot = (left_iqr_samples + right_iqr_samples) / 2
+            instability_iqr_se = np.std(iqr_boot)
 
-        # === PARALLEL BOOTSTRAP FOR MRTI INSTABILITY ===
-        def bootstrap_mrti():
-            li = np.random.choice(len(left_x), size=len(left_x), replace=True)
-            ri = np.random.choice(len(right_x), size=len(right_x), replace=True)
+            # === PARALLEL BOOTSTRAP FOR MRTI INSTABILITY ===
+            def bootstrap_mrti():
+                li = np.random.choice(len(left_x), size=len(left_x), replace=True)
+                ri = np.random.choice(len(right_x), size=len(right_x), replace=True)
 
-            lx_b, ly_b = left_x[li], left_y[li]
-            rx_b, ry_b = right_x[ri], right_y[ri]
+                lx_b, ly_b = left_x[li], left_y[li]
+                rx_b, ry_b = right_x[ri], right_y[ri]
 
-            if np.ptp(ly_b) < 1e-5 or np.ptp(ry_b) < 1e-5:  # ptp = max-min, check if y variation is too small
-                return None  # skip this bootstrap iteration
+                if np.ptp(ly_b) < 1e-5 or np.ptp(ry_b) < 1e-5:  # ptp = max-min, check if y variation is too small
+                    return None  # skip this bootstrap iteration
 
-            lc = np.polyfit(ly_b, lx_b, 1)
-            rc = np.polyfit(ry_b, rx_b, 1)
+                lc = np.polyfit(ly_b, lx_b, 1)
+                rc = np.polyfit(ry_b, rx_b, 1)
 
-            left_res_b = lx_b - np.poly1d(lc)(ly_b)
-            right_res_b = rx_b - np.poly1d(rc)(ry_b)
+                left_res_b = lx_b - np.poly1d(lc)(ly_b)
+                right_res_b = rx_b - np.poly1d(rc)(ry_b)
 
-            l_mrti = np.std(left_res_b / pxmm)
-            r_mrti = np.std(right_res_b / pxmm)
-            return (l_mrti + r_mrti) / 2
+                l_mrti = np.std(left_res_b / pxmm)
+                r_mrti = np.std(right_res_b / pxmm)
+                return (l_mrti + r_mrti) / 2
 
-        boot_mrti = Parallel(n_jobs=-1)(delayed(bootstrap_mrti)() for _ in range(n_boot))
-        boot_mrti = [x for x in boot_mrti if x is not None]  # remove failed samples
-        mrti_instability_se = np.std(boot_mrti)
+            boot_mrti = Parallel(n_jobs=-1)(delayed(bootstrap_mrti)() for _ in range(n_boot))
+            boot_mrti = [x for x in boot_mrti if x is not None]  # remove failed samples
+            mrti_instability_se = np.std(boot_mrti)
 
         if resolution:
             radius_sem = np.sqrt(radius_sem**2+resolution**2)
@@ -335,6 +338,43 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             dominant_idx_detrended = np.argmax(fft_power_detrended)
             dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
 
+            # --- Left edge ---
+            z_left_mm = left_y_single / pxmm
+            dz_left = np.mean(np.diff(z_left_mm))
+            Nl = len(left_x_single)
+            L_left = Nl * dz_left
+            fft_freqs_left = rfftfreq(2*Nl, d=dz_left)
+            df_left = fft_freqs_left[1] - fft_freqs_left[0]
+
+            fft_vals_left = rfft(left_x_single/pxmm, n=2*Nl)
+            psd_left = (1.0 / L_left) * (np.abs(fft_vals_left)**2) / df_left
+            fft_psd_left = psd_left[1:]
+            fft_wavelengths_left = 1 / fft_freqs_left[1:]
+
+            left_mm_detrended = detrend(left_x_single/pxmm, type='linear')
+            fft_vals_left_detr = rfft(left_mm_detrended, n=2*Nl)
+            psd_left_detr = (1.0 / L_left) * (np.abs(fft_vals_left_detr)**2) / df_left
+            fft_psd_left_detr = psd_left_detr[1:]
+
+            # --- Right edge ---
+            z_right_mm = right_y_single / pxmm
+            dz_right = np.mean(np.diff(z_right_mm))
+            Nr = len(right_x_single)
+            L_right = Nr * dz_right
+            fft_freqs_right = rfftfreq(2*Nr, d=dz_right)
+            df_right = fft_freqs_right[1] - fft_freqs_right[0]
+
+            fft_vals_right = rfft(right_x_single/pxmm, n=2*Nr)
+            psd_right = (1.0 / L_right) * (np.abs(fft_vals_right)**2) / df_right
+            fft_psd_right = psd_right[1:]
+            fft_wavelengths_right = 1 / fft_freqs_right[1:]
+
+            right_mm_detrended = detrend(right_x_single/pxmm, type='linear')
+            fft_vals_right_detr = rfft(right_mm_detrended, n=2*Nr)
+            psd_right_detr = (1.0 / L_right) * (np.abs(fft_vals_right_detr)**2) / df_right
+            fft_psd_right_detr = psd_right_detr[1:]
+
+
     if draw_forbidden_zones:
         for zx, zy, zw, zh in forbidden_zones:
             ax.add_patch(plt.Rectangle((zx, zy), zw, zh, color='red', alpha=0.2))
@@ -349,7 +389,8 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         instability_iqr_se, left_mrti, right_mrti, mrti_instability,
         mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x,
         right_y, dominant_wavelength, fft_wavelengths, fft_power, fft_psd,
-        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended)
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended,
+        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr)
 
 
 # GUI Class
@@ -646,7 +687,8 @@ class EdgeGUI:
         left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, \
         right_points, left_x, left_y, right_x, right_y, \
         dominant_wavelength, fft_wavelengths, fft_power, fft_psd, \
-        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended = analyze_image(
+        dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended, \
+        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -654,6 +696,7 @@ class EdgeGUI:
             title=image_name,
             total_points = total_points,
             resolution = resolution,
+            bootstrap = bootstrap,
         )
 
         # Update plot
@@ -710,6 +753,12 @@ class EdgeGUI:
             'fft_wavelengths_detrended': fft_wavelengths_detrended,
             'fft_power_detrended': fft_power_detrended,
             'fft_psd_detrended': fft_psd_detrended,
+            'fft_wavelengths_left': fft_wavelengths_left,
+            'fft_psd_left': fft_psd_left,
+            'fft_psd_left_detr': fft_psd_left_detr,
+            'fft_wavelengths_right': fft_wavelengths_right,
+            'fft_psd_right': fft_psd_right,
+            'fft_psd_right_detr': fft_psd_right_detr,
         }
 
 
@@ -781,6 +830,12 @@ class EdgeGUI:
             fft_wavelengths_detrended = data.get("fft_wavelengths_detrended")
             fft_power_detrended = data.get("fft_power_detrended")
             fft_psd_detrended = data.get("fft_psd_detrended")
+            fft_wavelengths_left = data.get("fft_wavelengths_left")
+            fft_psd_left = data.get("fft_psd_left")
+            fft_psd_left_detr = data.get("fft_psd_left_detr")
+            fft_wavelengths_right = data.get("fft_wavelengths_right")
+            fft_psd_right = data.get("fft_psd_right")
+            fft_psd_right_detr = data.get("fft_psd_right_detr")
 
             if fft_wavelengths is None or fft_psd is None:
                 messagebox.showerror("Error", "FFT data is missing.")
@@ -793,8 +848,22 @@ class EdgeGUI:
             if fft_wavelengths_detrended is not None and fft_psd_detrended is not None:
                 k_detrended = 2*np.pi/fft_wavelengths_detrended
                 self.ax.plot(k_detrended, fft_psd_detrended, alpha=0.6, label='Detrended', color='orange')
-            self.ax.legend()
 
+            '''if fft_wavelengths_left is not None and fft_psd_left is not None:
+                k_left = 2*np.pi/fft_wavelengths_left
+                self.ax.plot(k_left, fft_psd_left, alpha=0.6, label="Left (orig)", linestyle="--")'''
+            if fft_psd_left_detr is not None:
+                k_left = 2*np.pi/fft_wavelengths_left
+                self.ax.plot(k_left, fft_psd_left_detr, alpha=0.6, label="Left (detr)", linestyle="--", color="green")
+
+            '''if fft_wavelengths_right is not None and fft_psd_right is not None:
+                k_right = 2*np.pi/fft_wavelengths_right
+                self.ax.plot(k_right, fft_psd_right, alpha=0.6, label="Right (orig)", linestyle=":")'''
+            if fft_psd_right_detr is not None:
+                k_right = 2*np.pi/fft_wavelengths_right
+                self.ax.plot(k_right, fft_psd_right_detr, alpha=0.6, label="Right (detr)", linestyle="--", color="red")
+
+            self.ax.legend()
             self.ax.set_yscale('log')
             self.ax.set_xlabel("k (rad/mm)")
             self.ax.set_ylabel("PSD")
@@ -899,7 +968,13 @@ class EdgeGUI:
                          fft_wavelengths_detrended=np.array(result.get('fft_wavelengths_detrended', [])),
                          fft_power_detrended=np.array(result.get('fft_power_detrended', [])),
                          fft_psd_detrended=np.array(result.get('fft_psd_detrended', [])),
-                         )
+                         fft_wavelengths_left=np.array(result.get("fft_wavelengths_left", [])),
+                         fft_psd_left=np.array(result.get("fft_psd_left", [])),
+                         fft_psd_left_detr=np.array(result.get("fft_psd_left_detr", [])),
+                         fft_wavelengths_right=np.array(result.get("fft_wavelengths_right", [])),
+                         fft_psd_right=np.array(result.get("fft_psd_right", [])),
+                         fft_psd_right_detr=np.array(result.get("fft_psd_right_detr", [])),
+                                                 )
 
 
                 # Create a row to append
