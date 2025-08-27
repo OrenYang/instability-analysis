@@ -182,6 +182,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     left_iqr = right_iqr = instability_iqr = instability_iqr_se = None
     left_mean = right_mean = angle_std = None
     left_mrti = right_mrti = mrti_instability = mrti_instability_se = None
+    left_mrti_iqr = right_mrti_iqr = mrti_instability_iqr = mrti_iqr_se = None
     dominant_wavelength = fft_wavelengths = fft_power = fft_psd = None
     dominant_wavelength_detrended = fft_wavelengths_detrended = fft_power_detrended = fft_psd_detrended = None
     fft_wavelengths_left = fft_psd_left = fft_psd_left_detr = fft_wavelengths_right = fft_psd_right = fft_psd_right_detr = None
@@ -231,6 +232,10 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         left_mrti = np.std(left_res / pxmm)
         right_mrti = np.std(right_res / pxmm)
         mrti_instability = (left_mrti + right_mrti) / 2
+
+        left_mrti_iqr = (np.percentile(left_res, 75) - np.percentile(left_res, 25)) / pxmm
+        right_mrti_iqr = (np.percentile(right_res, 75) - np.percentile(right_res, 25)) / pxmm
+        mrti_instability_iqr = (left_mrti_iqr + right_mrti_iqr) / 2
 
         n_boot = 500  # adjust for speed/accuracy trade-off
 
@@ -285,6 +290,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             mrti_instability_se = np.sqrt(mrti_instability_se**2+resolution**2)
             instability_se = np.sqrt(instability_se**2+resolution**2)
             instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
+            mrti_iqr_se = np.sqrt(mrti_iqr_se**2+resolution**2)
 
         # outer x values for each y
         left_y_single, left_x_single = single_valued_profile(left_x, left_y, agg=np.min)
@@ -387,7 +393,8 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         instability_se, left_angle, right_angle, avg_angle, angle_std,
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr,
         instability_iqr_se, left_mrti, right_mrti, mrti_instability,
-        mrti_instability_se, len(left_x), len(right_x), left_x, left_y, right_x,
+        mrti_instability_se, left_mrti_iqr, right_mrti_iqr, mrti_instability_iqr,
+        mrti_iqr_se, len(left_x), len(right_x), left_x, left_y, right_x,
         right_y, dominant_wavelength, fft_wavelengths, fft_power, fft_psd,
         dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended,
         fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr)
@@ -684,8 +691,9 @@ class EdgeGUI:
         new_fig, pinch_radius, radius_sem, left_instability, right_instability, \
         instability, instability_se, left_angle, right_angle, avg_angle, angle_std, \
         left_mean, right_mean, left_iqr, right_iqr, instability_iqr, instability_iqr_se, \
-        left_mrti, right_mrti, mrti_instability, mrti_instability_se, left_points, \
-        right_points, left_x, left_y, right_x, right_y, \
+        left_mrti, right_mrti, mrti_instability, mrti_instability_se, \
+        left_mrti_iqr, right_mrti_iqr, mrti_instability_iqr, mrti_iqr_se,\
+        left_points, right_points, left_x, left_y, right_x, right_y, \
         dominant_wavelength, fft_wavelengths, fft_power, fft_psd, \
         dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended, \
         fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr = analyze_image(
@@ -721,6 +729,10 @@ class EdgeGUI:
             'right_mrti': right_mrti,
             'mrti_instability': mrti_instability,
             'mrti_instability_se': mrti_instability_se,
+            'left_mrti_iqr': left_mrti_iqr,
+            'right_mrti_iqr': right_mrti_iqr,
+            'mrti_instability_iqr': mrti_instability_iqr,
+            'mrti_iqr_se': mrti_iqr_se,
             'instability_se': instability_se,
             'left_iqr': left_iqr,
             'right_iqr': right_iqr,
@@ -990,6 +1002,10 @@ class EdgeGUI:
                     'Right Instability MRTI (mm)': result['right_mrti'],
                     'MRTI Instability (mm)': result['mrti_instability'],
                     'MRTI Instability SE (mm)': result['mrti_instability_se'],
+                    'Left MRTI IQR (mm)': result['left_mrti_iqr'],
+                    'Right MRTI IQR (mm)': result['right_mrti_iqr'],
+                    'MRTI Instability IQR (mm)': result['mrti_instability_iqr'],
+                    'MRTI Instability IQR SE (mm)': result['mrti_iqr_se'],
                     'Left Instability Amplitude IQR (mm)': result['left_iqr'],
                     'Right Instability Amplitude IQR (mm)': result['right_iqr'],
                     'Avg Instability Amplitude IQR (mm)': result['instability_iqr'],
