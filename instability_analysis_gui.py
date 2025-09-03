@@ -802,23 +802,54 @@ class EdgeGUI:
             self.ax.add_patch(self.rect_patch)
             self.canvas.draw()
 
+
+    def _clamped_event_data(self, event):
+        """Convert event (pixel) coords to data coords and clamp to axes bounds."""
+        # Axes bounds (sorted so it works even if the axis is inverted)
+        x0, x1 = self.ax.get_xbound()
+        y0, y1 = self.ax.get_ybound()
+        x_lo, x_hi = (x0, x1) if x0 <= x1 else (x1, x0)
+        y_lo, y_hi = (y0, y1) if y0 <= y1 else (y1, y0)
+
+        # Use data coords if available, otherwise transform from pixel coords
+        if event.xdata is not None and event.ydata is not None:
+            x, y = event.xdata, event.ydata
+        else:
+            inv = self.ax.transData.inverted()
+            x, y = inv.transform((event.x, event.y))
+
+        # Clamp to axes bounds
+        x = min(x_hi, max(x_lo, x))
+        y = min(y_hi, max(y_lo, y))
+        return x, y
+
+
     def on_mouse_drag(self, event):
-        if self.dragging and event.inaxes and self.rect_patch:
-            width = event.xdata - self.start_x
-            height = event.ydata - self.start_y
-            self.rect_patch.set_width(width)
-            self.rect_patch.set_height(height)
+        if self.dragging and self.rect_patch:
+            x, y = self._clamped_event_data(event)
+
+            self.rect_patch.set_width(x - self.start_x)
+            self.rect_patch.set_height(y - self.start_y)
             self.canvas.draw()
 
+
     def on_mouse_release(self, event):
-        if self.dragging and event.inaxes:
+        if self.dragging:
             self.dragging = False
-            end_x, end_y = event.xdata, event.ydata
+
+            end_x, end_y = self._clamped_event_data(event)
+
+            # Also clamp the start point to be safe after zoom/pan changes
+            x0, x1 = self.ax.get_xbound()
+            y0, y1 = self.ax.get_ybound()
+            sx = min(max(min(x0, x1), self.start_x), max(x0, x1))
+            sy = min(max(min(y0, y1), self.start_y), max(y0, y1))
+
             rect = (
-                min(self.start_x, end_x),
-                min(self.start_y, end_y),
-                abs(end_x - self.start_x),
-                abs(end_y - self.start_y)
+                min(sx, end_x),
+                min(sy, end_y),
+                abs(end_x - sx),
+                abs(end_y - sy)
             )
             self.forbidden_zones.append(rect)
             self.update_plot()
