@@ -790,9 +790,9 @@ class EdgeGUI:
             f"Avg. Instability Amplitude: {fmt(instability, ' mm')} ± {fmt(instability_se, ' mm')}\n"
             f"Avg. MRTI Instability: {fmt(mrti_instability, ' mm')} ± {fmt(mrti_instability_se, ' mm')}\n"
             f"Dominant Wavelength: {fmt(dominant_wavelength, ' mm')} ; detrended: {fmt(dominant_wavelength_detrended, ' mm')}\n"
-            #f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
-            #f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
-            #f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
+            f"Avg. Instability Amplitude - IQR: {fmt(instability_iqr, ' mm')} ± {fmt(instability_iqr_se, ' mm')}\n"
+            f"Left Flaring Angle: {fmt(left_angle, '°')}\n"
+            f"Right Flaring Angle: {fmt(right_angle, '°')}\n"
             f"Avg. Flaring Angle: {fmt(avg_angle, '°')} ± {fmt(angle_std, '°')}\n"
         )
 
