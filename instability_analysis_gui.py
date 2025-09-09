@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from tkinter import Tk, Scale, Button, Label, HORIZONTAL, filedialog, StringVar, Frame, OptionMenu, Entry, messagebox
+from tkinter import Tk, Scale, Button, Label, HORIZONTAL, filedialog, StringVar, Frame, OptionMenu, Entry, messagebox, scrolledtext
+from tkinter import *
 from PIL import Image
 from collections import defaultdict
 import re
@@ -74,7 +75,7 @@ def in_forbidden_zone(x, y, zones):
 # Image analysis function
 def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_height=13.5,
                   point_mode='all', N=5, forbidden_zones=None, draw_forbidden_zones=True,
-                  title=None, total_points=None, resolution=None, bootstrap=False):
+                  title=None, total_points=None, resolution=None, bootstrap=False, ax=None):
     if forbidden_zones is None:
         forbidden_zones = []
 
@@ -169,7 +170,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
 
     image_color = cv2.cvtColor(im_array, cv2.COLOR_GRAY2RGB)
-    fig, ax = plt.subplots(figsize=(6, 6))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 6))
+    else:
+        fig = ax.figure
+        ax.clear()
     ax.imshow(image_color)
 
     if left_x:
@@ -532,8 +537,18 @@ class EdgeGUI:
         self.update_csv_button = Button(controls, text="Update CSV", command=lambda: self.write_results_to_csv())
         self.update_csv_button.pack(anchor='w', pady=5)
 
-        self.result_label = Label(controls, text="Results will appear here.", justify='left', anchor='w', font=("Arial", 10))
-        self.result_label.pack(anchor='w', padx=5, pady=10)
+        self.result_box = scrolledtext.ScrolledText(
+            controls,
+            wrap=WORD,          # wrap lines by word instead of cutting mid-word
+            width=30,           # fixed character width (prevents widening controls column)
+            height=15,          # visible height in lines
+            font=("Arial", 10)
+        )
+        self.result_box.pack(fill='y', padx=5, pady=10, expand=True)
+
+        # Initial text
+        self.result_box.insert(END, "Results will appear here.\n")
+        self.result_box.config(state=DISABLED)  # make read-only
 
         self.fig, self.ax = plt.subplots(figsize=(6, 6))
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
@@ -705,18 +720,11 @@ class EdgeGUI:
             total_points = total_points,
             resolution = resolution,
             bootstrap = bootstrap,
+            ax=self.ax
         )
 
         # Update plot
-        self.canvas.get_tk_widget().pack_forget()
-        self.fig = new_fig
-        self.ax = self.fig.axes[0]
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)
-        self.canvas.mpl_connect("button_press_event", self.on_mouse_press)
-        self.canvas.mpl_connect("motion_notify_event", self.on_mouse_drag)
-        self.canvas.mpl_connect("button_release_event", self.on_mouse_release)
 
         # Store results
         self.image_settings[image_path] = {
@@ -791,7 +799,10 @@ class EdgeGUI:
 
         result_text += "Timing: {} ns".format(timing) if timing is not None else "Timing: N/A"
 
-        self.result_label.config(text=result_text)
+        self.result_box.config(state="normal")   # temporarily make it editable
+        self.result_box.delete("1.0", "end")     # clear old text
+        self.result_box.insert("end", result_text)
+        self.result_box.config(state="disabled") # make it read-only again
 
     def on_mouse_press(self, event):
         if event.inaxes:
