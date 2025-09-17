@@ -82,6 +82,8 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
     analysis_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     blurred = cv2.GaussianBlur(analysis_image, (5, 5), 0)
 
+    pxmm = None
+
     hgt, wid = blurred.shape
     min_intensity = np.min(blurred)
     peak_intensity = np.max(blurred)
@@ -402,7 +404,7 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         mrti_iqr_se, len(left_x), len(right_x), left_x, left_y, right_x,
         right_y, dominant_wavelength, fft_wavelengths, fft_power, fft_psd,
         dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended,
-        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr)
+        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr, pxmm)
 
 
 # GUI Class
@@ -711,7 +713,7 @@ class EdgeGUI:
         left_points, right_points, left_x, left_y, right_x, right_y, \
         dominant_wavelength, fft_wavelengths, fft_power, fft_psd, \
         dominant_wavelength_detrended, fft_wavelengths_detrended, fft_power_detrended, fft_psd_detrended, \
-        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr = analyze_image(
+        fft_wavelengths_left, fft_psd_left, fft_psd_left_detr, fft_wavelengths_right, fft_psd_right, fft_psd_right_detr, pxmm = analyze_image(
             image_path, margin_top, margin_bot, threshold_fraction,
             pinch_height=pinch_height, point_mode=point_mode, N=N,
             forbidden_zones=self.forbidden_zones,
@@ -779,6 +781,7 @@ class EdgeGUI:
             'fft_wavelengths_right': fft_wavelengths_right,
             'fft_psd_right': fft_psd_right,
             'fft_psd_right_detr': fft_psd_right_detr,
+            'pxmm': pxmm,
         }
 
 
@@ -1068,7 +1071,8 @@ class EdgeGUI:
                     'Points in left boundary': result['left_points'],
                     'Points in right boundary': result['right_points'],
                     'Dominant Wavelength (mm)': result['dominant_wavelength'],
-                    'Dominant wavelength detrended (mm)': result['dominant_wavelength_detrended']
+                    'Dominant wavelength detrended (mm)': result['dominant_wavelength_detrended'],
+                    'pxmm': result['pxmm']
                 }
 
                 # Check if this image already exists in the CSV, and update it if necessary

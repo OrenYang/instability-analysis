@@ -1,137 +1,100 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
+import os
 import numpy as np
-from PIL import Image, ImageTk
-from scipy.interpolate import UnivariateSpline
+from PIL import Image
+import tkinter as tk
+from tkinter import filedialog
+import csv
 
-PX_PER_MM = 10.0  # pixels per mm
+# Fixed real-world image height in mm
+height_mm = 13.5  # <-- change this to your setup
 
-class BoundaryAnalyzer:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Freehand Boundary Analyzer")
+def process_pair(npz_path, image_path, height_mm):
+    # Load NPZ data
+    data = np.load(npz_path)
 
-        self.canvas = tk.Canvas(root, cursor="cross", bg="white")
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+    if not all(k in data for k in ["left_x", "left_y", "right_x", "right_y"]):
+        raise KeyError(f"Missing keys in {npz_path}")
 
-        self.left_points = []
-        self.right_points = []
-        self.drawing_side = "left"  # start with left boundary
+    left_x, left_y = data["left_x"], data["left_y"]
+    right_x, right_y = data["right_x"], data["right_y"]
 
-        self.image = None
-        self.tk_image = None
+    # Compute mean x at each y for left
+    left_means = [np.mean(left_x[left_y == y]) for y in np.unique(left_y)]
+    mean_left_x = np.mean(left_means)
 
-        self.instruction_label = tk.Label(root, text="Draw LEFT boundary (red), press Enter when done", fg="red")
-        self.instruction_label.pack()
+    # Compute mean x at each y for right
+    right_means = [np.mean(right_x[right_y == y]) for y in np.unique(right_y)]
+    mean_right_x = np.mean(right_means)
 
-        self.load_image()
+    # Radius in px
+    avg_radius_px = (mean_right_x - mean_left_x) / 2
 
-        self.canvas.bind("<Button-1>", self.on_click)
-        self.canvas.bind("<B1-Motion>", self.on_drag)
-        self.root.bind("<Return>", self.next_boundary)
+    # Image height in px
+    with Image.open(image_path) as img:
+        height_px = img.height
 
-    def load_image(self):
-        file_path = filedialog.askopenfilename(title="Select an image")
-        if not file_path:
-            self.root.destroy()
-            return
+    # Conversion factor
+    px_to_mm = height_mm / height_px
 
-        self.image = Image.open(file_path)
-        self.tk_image = ImageTk.PhotoImage(self.image)
-        self.canvas.create_image(0, 0, image=self.tk_image, anchor="nw")
+    # Convert radius to mm
+    avg_radius_mm = avg_radius_px * px_to_mm
 
-    def on_click(self, event):
-        self.add_point(event.x, event.y)
+    return avg_radius_px, avg_radius_mm, height_px, px_to_mm, mean_left_x, mean_right_x
 
-    def on_drag(self, event):
-        self.add_point(event.x, event.y)
-
-    def add_point(self, x, y):
-        if self.drawing_side == "left":
-            self.left_points.append((x, y))
-            color = "red"
-        else:
-            self.right_points.append((x, y))
-            color = "blue"
-
-        self.canvas.create_oval(x-1, y-1, x+1, y+1, fill=color, outline=color)
-
-    def next_boundary(self, event=None):
-        if self.drawing_side == "left":
-            if len(self.left_points) < 5:
-                messagebox.showerror("Error", "Please draw more points for the left boundary.")
-                return
-            self.drawing_side = "right"
-            self.instruction_label.config(text="Draw RIGHT boundary (blue), press Enter when done", fg="blue")
-        else:
-            if len(self.right_points) < 5:
-                messagebox.showerror("Error", "Please draw more points for the right boundary.")
-                return
-            self.analyze_boundaries()
-
-    def analyze_boundaries(self):
-        left = np.array(self.left_points)
-        right = np.array(self.right_points)
-
-        # Sort by y
-        left = left[np.argsort(left[:, 1])]
-        right = right[np.argsort(right[:, 1])]
-
-        # Remove duplicate y-values for spline fitting (keep first occurrence)
-        def unique_rows(arr):
-            _, idx = np.unique(arr[:,1], return_index=True)
-            return arr[np.sort(idx)]
-
-        left = unique_rows(left)
-        right = unique_rows(right)
-
-        # Common y-range inside overlapping region
-        y_min = max(left[:, 1].min(), right[:, 1].min())
-        y_max = min(left[:, 1].max(), right[:, 1].max())
-
-        if y_max <= y_min:
-            messagebox.showerror("Error", "No overlapping y-range between left and right boundaries.")
-            return
-
-        common_y = np.linspace(y_min, y_max, 200)
-
-        try:
-            # Use s=0 for interpolation (no smoothing)
-            left_spline = UnivariateSpline(left[:, 1], left[:, 0], s=0)
-            right_spline = UnivariateSpline(right[:, 1], right[:, 0], s=0)
-
-            left_x_fit = left_spline(common_y)
-            right_x_fit = right_spline(common_y)
-
-            if np.any(np.isnan(left_x_fit)) or np.any(np.isnan(right_x_fit)):
-                messagebox.showerror("Error", "NaN encountered in spline output.")
-                return
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Error during spline fitting:\n{e}")
-            return
-
-        half_width_mm = (right_x_fit - left_x_fit) / 2 / PX_PER_MM
-        heights_mm = common_y / PX_PER_MM
-
-        pinch_radius = np.mean(half_width_mm)
-        instability = np.std(half_width_mm)
-
-        # Show results
-        messagebox.showinfo("Results",
-                            f"Pinch radius: {pinch_radius:.3f} mm\n"
-                            f"Instability: {instability:.3f} mm")
-
-        # Draw smoothed curves on canvas
-        for i in range(len(common_y) - 1):
-            self.canvas.create_line(left_x_fit[i], common_y[i],
-                                    left_x_fit[i+1], common_y[i+1],
-                                    fill="orange", width=2)
-            self.canvas.create_line(right_x_fit[i], common_y[i],
-                                    right_x_fit[i+1], common_y[i+1],
-                                    fill="cyan", width=2)
 
 if __name__ == "__main__":
+    # Tkinter root (hidden)
     root = tk.Tk()
-    app = BoundaryAnalyzer(root)
-    root.mainloop()
+    root.withdraw()
+
+    # Ask for NPZ folder
+    npz_folder = filedialog.askdirectory(title="Select NPZ folder")
+    if not npz_folder:
+        raise ValueError("No NPZ folder selected")
+
+    # Ask for image folder
+    image_folder = filedialog.askdirectory(title="Select image folder")
+    if not image_folder:
+        raise ValueError("No image folder selected")
+
+    results = []
+    valid_exts = [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+
+    for file in os.listdir(npz_folder):
+        if file.endswith("_boundary_points.npz"):
+            npz_path = os.path.join(npz_folder, file)
+
+            # Strip "_boundary_points" so base name matches image files
+            base_name = file.replace("_boundary_points.npz", "")
+
+            # Find matching image with any valid extension
+            image_path = None
+            for ext in valid_exts:
+                candidate = os.path.join(image_folder, base_name + ext)
+                if os.path.exists(candidate):
+                    image_path = candidate
+                    break
+
+            if not image_path:
+                print(f"⚠️ No matching image for {file}, skipping")
+                continue
+
+            try:
+                avg_px, avg_mm, height_px, scale, mean_left, mean_right = process_pair(
+                    npz_path, image_path, height_mm
+                )
+                results.append((base_name, avg_px, avg_mm))
+                print(f"{base_name}: {avg_px:.2f} px = {avg_mm:.2f} mm")
+            except Exception as e:
+                print(f"❌ Error processing {file}: {e}")
+
+    # Save results to CSV one folder up from NPZ folder
+    parent_folder = os.path.dirname(npz_folder)
+    csv_path = os.path.join(parent_folder, "radius_results.csv")
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Shot", "Radius_px", "Radius_mm"])
+        writer.writerows(results)
+
+    print(f"\n✅ Results saved to {csv_path}")
