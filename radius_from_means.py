@@ -19,16 +19,35 @@ def process_pair(npz_path, image_path, height_mm):
     right_x, right_y = data["right_x"], data["right_y"]
 
     # Compute mean x at each y for left
-    left_means = [np.mean(left_x[left_y == y]) for y in np.unique(left_y)]
+    unique_left_y = np.unique(left_y)
+    left_means = [np.mean(left_x[left_y == y]) for y in unique_left_y]
     mean_left_x = np.mean(left_means)
 
     # Compute mean x at each y for right
-    right_means = [np.mean(right_x[right_y == y]) for y in np.unique(right_y)]
+    unique_right_y = np.unique(right_y)
+    right_means = [np.mean(right_x[right_y == y]) for y in unique_right_y]
     mean_right_x = np.mean(right_means)
 
     # Radius in px
     avg_radius_px = (mean_right_x - mean_left_x) / 2
 
+    # Linear fit: x = a*y + b
+    left_fit = np.polyfit(unique_left_y, left_means, deg=1)
+    right_fit = np.polyfit(unique_right_y, right_means, deg=1)
+
+    # Predicted x values from the fit
+    left_fit_x = np.polyval(left_fit, unique_left_y)
+    right_fit_x = np.polyval(right_fit, unique_right_y)
+
+    # Residuals
+    left_residuals = left_means - left_fit_x
+    right_residuals = right_means - right_fit_x
+
+    # Instability amplitude = std of residuals
+    left_instability = np.std(left_residuals)
+    right_instability = np.std(right_residuals)
+    instability_amplitude = (left_instability + right_instability) / 2
+    
     # Image height in px
     with Image.open(image_path) as img:
         height_px = img.height
@@ -39,7 +58,9 @@ def process_pair(npz_path, image_path, height_mm):
     # Convert radius to mm
     avg_radius_mm = avg_radius_px * px_to_mm
 
-    return avg_radius_px, avg_radius_mm, height_px, px_to_mm, mean_left_x, mean_right_x
+    instability_amplitude = instability_amplitude * px_to_mm
+
+    return avg_radius_px, avg_radius_mm, height_px, px_to_mm, mean_left_x, mean_right_x, left_instability, right_instability, instability_amplitude
 
 
 if __name__ == "__main__":
@@ -80,10 +101,10 @@ if __name__ == "__main__":
                 continue
 
             try:
-                avg_px, avg_mm, height_px, scale, mean_left, mean_right = process_pair(
+                avg_px, avg_mm, height_px, scale, mean_left, mean_right, left_instabiliy, right_instability, instability_amplitude = process_pair(
                     npz_path, image_path, height_mm
                 )
-                results.append((base_name, avg_px, avg_mm))
+                results.append((base_name, avg_px, avg_mm, instability_amplitude))
                 print(f"{base_name}: {avg_px:.2f} px = {avg_mm:.2f} mm")
             except Exception as e:
                 print(f"❌ Error processing {file}: {e}")
@@ -94,7 +115,7 @@ if __name__ == "__main__":
 
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Shot", "Radius_px", "Radius_mm"])
+        writer.writerow(["Shot", "Radius_px", "Radius_mm","instability amplitude"])
         writer.writerows(results)
 
     print(f"\n✅ Results saved to {csv_path}")
