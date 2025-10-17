@@ -19,10 +19,10 @@ def single_valued_profile(xs, ys, agg=np.median):
     xs_agg = [agg(y_to_x[y]) for y in ys_sorted]
     return np.array(ys_sorted), np.array(xs_agg)
 
-def fft_analysis(npz_file,img_file, save_folder="ffts"):
+def fft_analysis(npz_file,img_file, height_mm=13.5, save_folder="ffts"):
     image = Image.open(img_file)
     img_height_px = image.size[1]
-    pxmm = img_height_px / 13.5
+    pxmm = img_height_px / height_mm
 
     ########### Load boundary data #####################
     data = np.load(npz_file)
@@ -143,6 +143,9 @@ def fft_analysis(npz_file,img_file, save_folder="ffts"):
     return
 
 if __name__ == "__main__":
+
+    pinch_height = 13.5 #mm
+    
     root = tk.Tk()
     root.withdraw()
 
@@ -173,4 +176,4 @@ if __name__ == "__main__":
             continue
 
         npz_path = os.path.join(npz_folder, npz_file)
-        fft_analysis(npz_path, img_file, save_folder=save_folder)
+        fft_analysis(npz_path, img_file, height_mm = pinch_height, save_folder=save_folder)
