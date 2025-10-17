@@ -313,79 +313,82 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         # Convert to mm
         z_mm = z_vals / pxmm
         half_width_mm = half_width_px / pxmm
+        half_width_mm = half_width_mm - np.mean(half_width_mm)
 
         # === FFT on half-width without detrending (shows zippering effects too) ===
-        N_fft = len(half_width_mm)
-        N_pad = 2 * N_fft
+        N = len(half_width_mm)
+        N_pad = 2 * N
         if N_pad > 0:
+            ######## HALF-WIDTH FFT #######################
+
             dz = np.mean(np.diff(z_mm))
-            L = N_fft*dz
+            L = N*dz
             fft_vals = rfft(half_width_mm, n=N_pad)
-            fft_freqs = rfftfreq(N_pad, d=dz)  # cycles/mm
-            power_spectrum = np.abs(fft_vals)**2
+            fft_freqs = rfftfreq(N_pad, d=dz)
 
-            df = fft_freqs[1] - fft_freqs[0]   # frequency resolution
-            psd = (1.0 / (L)) * (np.abs(fft_vals)**2) / df
+            psd = (2.0 * dz / N) * np.abs(fft_vals)**2
+            psd[0] /= 2
 
-            # Wavelengths in mm (skip zero freq)
-            fft_wavelengths = 1 / fft_freqs[1:]
-            fft_power = power_spectrum[1:]
+            fft_wavelengths = 1/fft_freqs[1:]
             fft_psd = psd[1:]
+            #################################################
 
-            dominant_fft_idx = np.argmax(fft_power)
-            dominant_wavelength = fft_wavelengths[dominant_fft_idx]  # in mm
 
-            # Detrend half-width (remove linear trend caused by zippering)
+            ####### HALF-WIDTH DETRENDED FFT ###############
             half_width_mm_detrended = detrend(half_width_mm, type='linear')
 
-            # === FFT on detrended half-width ===
             fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
-            power_spectrum_detrended = np.abs(fft_vals_detrended)**2
-            psd_detrended = (1.0 / (L)) * (np.abs(fft_vals_detrended)**2) / df
 
-            fft_wavelengths_detrended = 1 / fft_freqs[1:]
-            fft_power_detrended = power_spectrum_detrended[1:]
+            fft_freqs_detrended = fft_freqs
+            psd_detrended = (2.0 * dz / N) * np.abs(fft_vals_detrended)**2
+            psd_detrended[0] /= 2
+
+            fft_wavelengths_detrended = 1/fft_freqs[1:]
             fft_psd_detrended = psd_detrended[1:]
+            #################################################
 
 
-            dominant_idx_detrended = np.argmax(fft_power_detrended)
-            dominant_wavelength_detrended = fft_wavelengths_detrended[dominant_idx_detrended]
-
-            # --- Left edge ---
+            ##### LEFT EDGE FFT and DETRENDED LEFT EDGE FFT ######
             z_left_mm = left_y_single / pxmm
             dz_left = np.mean(np.diff(z_left_mm))
-            Nl = len(left_x_single)
-            L_left = Nl * dz_left
-            fft_freqs_left = rfftfreq(2*Nl, d=dz_left)
-            df_left = fft_freqs_left[1] - fft_freqs_left[0]
+            N_left = len(left_x_single)
+            N_left_pad = 2 * N_left
+            L_left = N_left * dz_left
+            fft_freqs_left = rfftfreq(N_left_pad, d=dz_left)
 
-            fft_vals_left = rfft(left_x_single/pxmm, n=2*Nl)
-            psd_left = (1.0 / L_left) * (np.abs(fft_vals_left)**2) / df_left
+            left_x_mm = (left_x_single - np.mean(left_x_single))/pxmm
+            fft_vals_left = rfft(left_x_mm, n=N_left_pad)
+
+            psd_left = (2 * dz_left / N_left) * np.abs(fft_vals_left)**2
             fft_psd_left = psd_left[1:]
             fft_wavelengths_left = 1 / fft_freqs_left[1:]
 
-            left_mm_detrended = detrend(left_x_single/pxmm, type='linear')
-            fft_vals_left_detr = rfft(left_mm_detrended, n=2*Nl)
-            psd_left_detr = (1.0 / L_left) * (np.abs(fft_vals_left_detr)**2) / df_left
+            left_mm_detrended = detrend(left_x_mm, type='linear')
+            fft_vals_left_detr = rfft(left_mm_detrended, n=N_left_pad)
+            psd_left_detr = (2 * dz_left / N_left) * np.abs(fft_vals_left_detr)**2
             fft_psd_left_detr = psd_left_detr[1:]
+            #################################################
 
-            # --- Right edge ---
+            ##### RIGHT EDGE FFT and DETRENDED RIGHT EDGE FFT ######
             z_right_mm = right_y_single / pxmm
             dz_right = np.mean(np.diff(z_right_mm))
-            Nr = len(right_x_single)
-            L_right = Nr * dz_right
-            fft_freqs_right = rfftfreq(2*Nr, d=dz_right)
-            df_right = fft_freqs_right[1] - fft_freqs_right[0]
+            N_right = len(right_x_single)
+            N_right_pad = 2 * N_right
+            L_right = N_right * dz_right
+            fft_freqs_right = rfftfreq(N_right_pad, d=dz_right)
 
-            fft_vals_right = rfft(right_x_single/pxmm, n=2*Nr)
-            psd_right = (1.0 / L_right) * (np.abs(fft_vals_right)**2) / df_right
+            right_x_mm = (right_x_single - np.mean(right_x_single))/pxmm
+            fft_vals_right = rfft(right_x_mm, n=N_right_pad)
+
+            psd_right = (2 * dz_right / N_right) * np.abs(fft_vals_right)**2
             fft_psd_right = psd_right[1:]
             fft_wavelengths_right = 1 / fft_freqs_right[1:]
 
-            right_mm_detrended = detrend(right_x_single/pxmm, type='linear')
-            fft_vals_right_detr = rfft(right_mm_detrended, n=2*Nr)
-            psd_right_detr = (1.0 / L_right) * (np.abs(fft_vals_right_detr)**2) / df_right
+            right_mm_detrended = detrend(right_x_mm, type='linear')
+            fft_vals_right_detr = rfft(right_mm_detrended, n=N_right_pad)
+            psd_right_detr = (2 * dz_right / N_right) * np.abs(fft_vals_right_detr)**2
             fft_psd_right_detr = psd_right_detr[1:]
+            #######################################################
 
 
     if draw_forbidden_zones:
@@ -676,7 +679,6 @@ class EdgeGUI:
             cam = image_name.split('_')[1]
             frame = image_name.split('_')[2][0]
         except (ValueError, IndexError):
-            print(f"Skipping {image_name}: filename format incorrect")
             timing = None
         else:
             if self.timing_df is not None and shot in self.timing_df.columns:
@@ -1014,7 +1016,8 @@ class EdgeGUI:
                          left_x=np.array(result.get('left_x', [])),
                          left_y=np.array(result.get('left_y', [])),
                          right_x=np.array(result.get('right_x', [])),
-                         right_y=np.array(result.get('right_y', [])))
+                         right_y=np.array(result.get('right_y', [])),
+                         px_per_mm = result['pxmm'])
 
                 npz_path = os.path.join(fits_folder, f"{base_name}_fft.npz")
 
