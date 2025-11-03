@@ -16,4 +16,7 @@ wl = data['fft_wavelengths_detrended']
 psd = data['fft_psd_detrended']
 
 plt.plot(wl,psd)
+#plt.axvline(1,color='purple',linestyle='--')
+#plt.axvline(5.4,color='purple',linestyle='--')
+plt.axvline(9,color='purple',linestyle='--')
 plt.show()

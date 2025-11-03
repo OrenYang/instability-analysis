@@ -7,14 +7,17 @@ from tkinter import filedialog
 import matplotlib
 matplotlib.use("TkAgg")
 from scipy.optimize import curve_fit
-from scipy.special import erf
+from scipy.special import erf, erfinv
 
 
 # -------------------- USER OPTIONS --------------------
 negative_mask = False
 min_radius_mask = True
-relative_time = True
-fit_method = "erf"    # options: "poly", "power", "exp", "erf"
+relative_time = False
+fit_method = "erf_model"    # options: "poly", "power", "exp", "erf","erf_model"
+save = True
+plot = False
+make_title = True
 # ------------------------------------------------------
 # -------------------- ADDITIONAL VELOCITY SCATTER --------------------
 def velocity_scatter(time, radius, dt_average=5):
@@ -56,10 +59,61 @@ def velocity_scatter(time, radius, dt_average=5):
 
     dt = np.diff(averaged_time)
     dr = np.diff(averaged_radius)
-    vel = dr / dt * 1e3   # km/ns → m/s
+    vel = dr / dt * 1e3   # mm/ns → km/s
     t_vel = averaged_time[:-1] + dt/2
 
     return averaged_time, averaged_radius, std_radius, t_vel, vel
+
+def erf_model(time_range, radius_range, num_points=500):
+    mask = np.isfinite(time_range) & np.isfinite(radius_range)
+    t_data = np.array(time_range)[mask]
+    r_data = np.array(radius_range)[mask]
+
+    R0_guess = 18 #np.max(r_data)
+    Delta_guess = np.abs(np.max(t_data))
+
+    def r_model(t, R0, Delta):
+        return R0*np.exp(-(erfinv(t/Delta))**2)
+
+    p0 = [R0_guess, Delta_guess]
+
+    popt, pcov = curve_fit(r_model, t_data, r_data, p0=p0)
+    perr = np.sqrt(np.diag(pcov))
+
+    t_fit = np.linspace(np.min(t_data), np.max(t_data), num_points)
+    r_fit = r_model(t_fit, *popt)
+
+    J = np.zeros((len(t_fit),len(popt)))
+    eps = 1e-8
+    for i in range(len(popt)):
+        p_eps = popt.copy()
+        p_eps[i] += eps
+        J[:,i] = (r_model(t_fit, *p_eps) - r_fit) / eps
+
+    r_var = np.sum(J @ pcov * J, axis=1)
+    r_std = np.sqrt(r_var)
+
+    def v_model(t, R0, Delta):
+        return -R0*np.sqrt(np.pi)/Delta*erfinv(t/Delta)*1e3
+
+    v_fit = v_model(t_fit, *popt)
+
+    R0, Delta = popt
+    inv = erfinv(t_fit / Delta)
+    exp_term = np.exp(inv**2)
+
+    dv_dR0 = -np.sqrt(np.pi) / Delta * inv * 1e3
+    dv_dDelta = R0 * np.sqrt(np.pi) * 1e3 * (
+        (1 / Delta**2) * inv + (t_fit * np.sqrt(np.pi) / (2 * Delta**3)) * exp_term
+    )
+
+    Jv = np.vstack([dv_dR0, dv_dDelta]).T
+    v_var = np.sum(Jv @ pcov * Jv, axis=1)
+    v_std = np.sqrt(v_var)
+
+    print(R0, Delta)
+
+    return t_fit, r_fit, r_std, perr, v_fit, v_std
 
 
 def erf_radius_fit(time_range, radius_range, num_points=500):
@@ -79,13 +133,12 @@ def erf_radius_fit(time_range, radius_range, num_points=500):
     bounds = ([0, 0, np.min(t_data), 1e-9],
               [np.inf, np.inf, np.max(t_data), np.inf])
 
-    popt, _ = curve_fit(r_model, t_data, r_data, p0=p0, bounds=bounds, maxfev=20000)
+    popt, pcov = curve_fit(r_model, t_data, r_data, p0=p0, bounds=bounds, maxfev=20000)
 
     t_fit = np.linspace(np.min(t_data), np.max(t_data), num_points)
     r_fit = r_model(t_fit, *popt)
 
     return t_fit, r_fit
-
 
 def exp_radius_fit(time_range, radius_range, num_points=500):
     def negexp_model(t, A, alpha, C, t0):
@@ -146,7 +199,14 @@ if __name__ == '__main__':
 
     time_name = 'Instability Relative_Timing' if relative_time else 'Instability Timing'
     time = np.array(df[time_name])
-    radius = np.array(df['Instability Radius'])
+    radius_cols = [col for col in df.columns if 'radius' in col.lower()]
+    if not radius_cols:
+        raise ValueError("No column containing 'radius' found in CSV.")
+    if len(radius_cols) > 1:
+        print(f"Multiple radius-like columns found, using '{radius_cols[0]}' by default.")
+    radius_name = radius_cols[0]
+    radius = np.array(df[radius_name])
+    print(f"✅ Using radius column: {radius_name}")
 
     sort_idx = np.argsort(time)
     time = time[sort_idx]
@@ -184,12 +244,19 @@ if __name__ == '__main__':
 
     elif fit_method == "erf":
         t, r = erf_radius_fit(time_range, radius_range)
+    elif fit_method == "erf_model":
+        if relative_time:
+            t, r = erf_radius_fit(time_range, radius_range)
+        else:
+            t, r, r_std, perr, v, v_std = erf_model(time_range, radius_range)
 
     else:
         raise ValueError("Invalid fit_method. Use 'poly', 'power', or 'exp'.")
     # ------------------------------------------------------
 
-    v = np.gradient(r, t) * 1e3  # km/s to m/s
+    if fit_method != "erf_model":
+        v = np.gradient(r, t) * 1e3  # mm/ns to km/s
+
 
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
@@ -198,16 +265,65 @@ if __name__ == '__main__':
     t_avg, r_avg, r_err, t_scatter, v_scatter = velocity_scatter(time_range, radius_range, dt_average=5)
 
     # Plot
-    ax1.errorbar(t_avg, r_avg, yerr=r_err, fmt='o', color='green', label='Avg radius (5 ns bins)', capsize=4)
-    ax2.scatter(t_scatter, v_scatter, color='orange', label='Data velocity', s=30)
+    #ax1.errorbar(t_avg, r_avg, yerr=r_err, fmt='o', color='green', label='Avg radius (5 ns bins)', capsize=4)
+    #ax2.scatter(t_scatter, v_scatter, color='orange', label='Data velocity', s=30)
 
 
-    ax1.scatter(time, radius, label="Data", s=30)
+    ax1.scatter(time, radius, label="Experimental Data", s=30)
     ax1.plot(t, r, label=f"{fit_method} fit", linewidth=2)
+    if fit_method == "erf_model":
+        ax1.fill_between(t, r - r_std, r + r_std, color='b', alpha=0.3, label='1σ uncertainty')
+
     ax2.plot(t, v, label="Velocity", color='red')
+    if fit_method == "erf_model":
+        ax2.fill_between(t, v - v_std, v + v_std, color='red', alpha=0.2, label='Velocity 1σ')
 
-    ax1.set_xlabel("Time")
-    ax1.set_ylabel("Radius")
-    ax2.set_ylabel("Velocity (m/s)")
+    ax1.set_xlabel("Time [ns]")
+    ax1.set_ylabel("Radius [mm]")
+    ax2.set_ylabel("Velocity [km/s]")
 
-    plt.show()
+    base_name = os.path.splitext(os.path.basename(f))[0]
+
+    parts = base_name.split('-')
+
+    title = None
+    try:
+        if len(parts) == 2:
+            psi, timing = parts
+            title = f"{psi} psi, -{timing} us"
+        elif len(parts) == 4:
+            psi1, timing1, psi2, timing2 = parts
+            title = f"Liner: {psi1} psi, {timing1} ns | Target: {psi2} psi, {timing2} ns"
+    except Exception:
+        title = base_name  # fallback
+
+    if title and make_title:
+        plt.title(title)
+
+    if save:
+        base_dir = os.path.dirname(f)
+
+        # Create subfolders if missing
+        plot_dir = os.path.join(base_dir, "plots")
+        fit_dir = os.path.join(base_dir, "fits")
+        os.makedirs(plot_dir, exist_ok=True)
+        os.makedirs(fit_dir, exist_ok=True)
+
+        # Save plot
+        plot_path = os.path.join(plot_dir, f"{base_name}_{fit_method}_fit.png")
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=300)
+        print(f"✅ Plot saved to: {plot_path}")
+
+        # Save fit data to npz
+        fit_path = os.path.join(fit_dir, f"{base_name}_{fit_method}_fit.npz")
+
+        # Store whatever arrays exist safely
+        fit_data = {"t": t, "r": r, "v": v}
+        if fit_method == "erf_model":
+            fit_data.update({"r_std": r_std, "v_std": v_std, "param_err": perr})
+        np.savez(fit_path, **fit_data)
+        print(f"✅ Fit data saved to: {fit_path}")
+
+    if plot:
+        plt.show()

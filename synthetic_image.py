@@ -61,12 +61,12 @@ def generate_zpinch_image(
 
 # Example usage
 if __name__ == "__main__":
-    wavelengths = [1, 13.5/2.5] #mm
-    amplitudes = [0.8,0.8]
+    wavelengths = [9] #mm
+    amplitudes = [1]
     wavelength_str = "_".join(f"{w:.2f}" for w in wavelengths)
 
     generate_zpinch_image(
-        radius_mm=5.0,
+        radius_mm=1.5,
         wavelengths_mm=wavelengths,
         amplitudes_mm=amplitudes,
         img_height_px=1500,        # height in pixels

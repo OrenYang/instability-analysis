@@ -42,7 +42,7 @@ def fft_analysis(npz_file,img_file, height_mm=13.5, save_folder="ffts"):
 
     ######## HALF-WIDTH FFT #######################
     N = len(half_width_mm)
-    N_pad = 2 * N
+    N_pad = 2**14
 
     dz = np.mean(np.diff(z_mm))
     L = N*dz
@@ -59,8 +59,10 @@ def fft_analysis(npz_file,img_file, height_mm=13.5, save_folder="ffts"):
 
     ####### HALF-WIDTH DETRENDED FFT ###############
     half_width_mm_detrended = detrend(half_width_mm, type='linear')
+    window = np.hamming(N)
+    half_width_win_detrended = half_width_mm_detrended * window
 
-    fft_vals_detrended = rfft(half_width_mm_detrended, n=N_pad)
+    fft_vals_detrended = rfft(half_width_win_detrended, n=N_pad)
 
     fft_freqs_detrended = fft_freqs
     psd_detrended = (2.0 * dz / N) * np.abs(fft_vals_detrended)**2
@@ -145,7 +147,7 @@ def fft_analysis(npz_file,img_file, height_mm=13.5, save_folder="ffts"):
 if __name__ == "__main__":
 
     pinch_height = 13.5 #mm
-    
+
     root = tk.Tk()
     root.withdraw()
 

@@ -11,8 +11,9 @@ import matplotlib.colors as mcolors
 from scipy.signal import butter, filtfilt
 
 use_log = True
-use_lowPass_filter = True
-use_waveNumber = True
+use_lowPass_filter = False
+use_waveNumber = False
+min_percent = 0.0001 # min_val = min_percent*max_val, minimum of color bar
 
 def lowpass_filter(y, cutoff_freq, fs, order=4):
     nyquist = 0.5 * fs
@@ -103,9 +104,9 @@ if __name__ == '__main__':
         contour = plt.pcolormesh(
             X, Y, psd_time_interp,
             shading='auto',
-            cmap='viridis',
+            cmap='jet',
             norm=mcolors.LogNorm(
-                vmin=np.nanmin(psd_time_interp[psd_time_interp > 0]),
+                vmin=min_percent*np.nanmax(psd_time_interp),#np.nanmin(psd_time_interp[psd_time_interp > 0]),
                 vmax=np.nanmax(psd_time_interp)
             )
         )
@@ -113,7 +114,7 @@ if __name__ == '__main__':
         contour = plt.pcolormesh(
             X, Y, psd_time_interp,
             shading='auto',
-            cmap='viridis'
+            cmap='jet'
         )
 
     plt.colorbar(contour, label="PSD")
