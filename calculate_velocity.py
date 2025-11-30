@@ -9,16 +9,62 @@ matplotlib.use("TkAgg")
 from scipy.optimize import curve_fit
 from scipy.special import erf, erfinv
 
-
 # -------------------- USER OPTIONS --------------------
 negative_mask = False
 min_radius_mask = True
-relative_time = False
 fit_method = "erf_model"    # options: "poly", "power", "exp", "erf","erf_model"
 save = True
-plot = False
-make_title = True
+plot = True
+make_title = False
+use_radius_err = True
 # ------------------------------------------------------
+
+"""
+Radius–vs–time analysis and velocity extraction tool.
+
+This script loads a CSV containing time and radius measurements,
+optionally with radius uncertainties, then applies a selected radius-fit
+model (poly, power, exp, erf, or erf_model). It outputs plots and a .npz
+file containing the fitted radius, velocity, and uncertainties. The user
+selects the CSV via a file-dialog window.
+
+--------------------
+USER INPUT OPTIONS
+--------------------
+negative_mask : bool
+    If True, only keep data with time < 0.
+
+min_radius_mask : bool
+    If True, truncate data at the minimum radius point.
+
+fit_method : str
+    Select the radius model to fit:
+        "poly"       – cubic polynomial
+        "power"      – r = r0 – B*(t - t0)^p
+        "exp"        – negative exponential
+        "erf"        – error-function transition model
+        "erf_model"  – analytic erf-based model with full uncertainty propagation
+
+save : bool
+    If True, save output plot and fit .npz file into /plots and /fits subfolders.
+
+plot : bool
+    If True, display plot.
+
+make_title : bool
+    If True, auto-generate a plot title from the CSV filename pattern.
+
+use_radius_err : bool
+    If True, include the radius error column (if present) in the erf_model fit.
+
+--------------------
+EXPECTED CSV CONTENTS
+--------------------
+• One column containing "time" or "timing"
+• One column containing "radius"
+• Optional: a column containing "err", "error", "std", or "sem"
+"""
+
 # -------------------- ADDITIONAL VELOCITY SCATTER --------------------
 def velocity_scatter(time, radius, dt_average=5):
     """
@@ -64,10 +110,15 @@ def velocity_scatter(time, radius, dt_average=5):
 
     return averaged_time, averaged_radius, std_radius, t_vel, vel
 
-def erf_model(time_range, radius_range, num_points=500):
+def erf_model(time_range, radius_range, radius_err=None, num_points=500):
     mask = np.isfinite(time_range) & np.isfinite(radius_range)
     t_data = np.array(time_range)[mask]
     r_data = np.array(radius_range)[mask]
+
+    if radius_err is not None:
+        sigma = np.array(radius_err)[mask]
+    else:
+        sigma = None
 
     R0_guess = 18 #np.max(r_data)
     Delta_guess = np.abs(np.max(t_data))
@@ -77,7 +128,14 @@ def erf_model(time_range, radius_range, num_points=500):
 
     p0 = [R0_guess, Delta_guess]
 
-    popt, pcov = curve_fit(r_model, t_data, r_data, p0=p0)
+
+    popt, pcov = curve_fit(
+        r_model, t_data, r_data,
+        p0=p0,
+        sigma=sigma,
+        absolute_sigma=(sigma is not None),
+        maxfev=50000
+    )
     perr = np.sqrt(np.diag(pcov))
 
     t_fit = np.linspace(np.min(t_data), np.max(t_data), num_points)
@@ -197,8 +255,13 @@ if __name__ == '__main__':
 
     df = pd.read_csv(f)
 
-    time_name = 'Instability Relative_Timing' if relative_time else 'Instability Timing'
+    timing_cols = [c for c in df.columns if "time" in c.lower() or "timing" in c.lower()]
+    if not timing_cols:
+        raise ValueError("No column containing 'time' or 'timing' found in CSV.")
+    time_name = timing_cols[0]
+    print(f"✅ Using time column: {time_name}")
     time = np.array(df[time_name])
+
     radius_cols = [col for col in df.columns if 'radius' in col.lower()]
     if not radius_cols:
         raise ValueError("No column containing 'radius' found in CSV.")
@@ -208,26 +271,46 @@ if __name__ == '__main__':
     radius = np.array(df[radius_name])
     print(f"✅ Using radius column: {radius_name}")
 
+    # ---- radius error detection ---
+    err_keywords = ["err", "error", "std", "sem"]
+    radius_err = None
+    err_cols = [c for c in df.columns if any(k in c.lower() for k in err_keywords)]
+    if err_cols:
+        err_col = err_cols[0]
+        radius_err = np.array(df[err_col])
+        print(f"✅ Using radius uncertainty column: {err_col}")
+    else:
+        print("No radius uncertainty column")
+
     sort_idx = np.argsort(time)
     time = time[sort_idx]
     radius = radius[sort_idx]
+    if radius_err is not None:
+        radius_err = radius_err[sort_idx]
 
     mask = np.isfinite(time) & np.isfinite(radius)
     time = time[mask]
     radius = radius[mask]
+    if radius_err is not None:
+        radius_err = radius_err[mask]
 
     time_range = time
     radius_range = radius
+    radius_err_range = radius_err
 
     if negative_mask:
         mask_neg = time_range < 0
         time_range = time_range[mask_neg]
         radius_range = radius_range[mask_neg]
+        if radius_err_range is not None:
+            radius_err_range = radius_err_range[mask_neg]
 
     if min_radius_mask and len(radius_range) > 0:
         idx_min = np.argmin(radius_range)
         time_range = time_range[:idx_min+1]
         radius_range = radius_range[:idx_min+1]
+        if radius_err_range is not None:
+            radius_err_range = radius_err_range[:idx_min+1]
 
     # -------------------- FIT SELECTOR --------------------
     if fit_method == "poly":
@@ -245,17 +328,17 @@ if __name__ == '__main__':
     elif fit_method == "erf":
         t, r = erf_radius_fit(time_range, radius_range)
     elif fit_method == "erf_model":
-        if relative_time:
-            t, r = erf_radius_fit(time_range, radius_range)
-        else:
-            t, r, r_std, perr, v, v_std = erf_model(time_range, radius_range)
+        if not use_radius_err:
+            radius_err_range = None
+            print("Not using radius error bars in fit")
+        t, r, r_std, perr, v, v_std = erf_model(time_range, radius_range, radius_err_range)
 
     else:
         raise ValueError("Invalid fit_method. Use 'poly', 'power', or 'exp'.")
     # ------------------------------------------------------
 
     if fit_method != "erf_model":
-        v = np.gradient(r, t) * 1e3  # mm/ns to km/s
+        v = np.gradient(r, t) * 1e3  # mm/ns → km/s
 
 
     fig, ax1 = plt.subplots()
@@ -267,20 +350,66 @@ if __name__ == '__main__':
     # Plot
     #ax1.errorbar(t_avg, r_avg, yerr=r_err, fmt='o', color='green', label='Avg radius (5 ns bins)', capsize=4)
     #ax2.scatter(t_scatter, v_scatter, color='orange', label='Data velocity', s=30)
-
-
-    ax1.scatter(time, radius, label="Experimental Data", s=30)
-    ax1.plot(t, r, label=f"{fit_method} fit", linewidth=2)
+    fit_label = fit_method
     if fit_method == "erf_model":
-        ax1.fill_between(t, r - r_std, r + r_std, color='b', alpha=0.3, label='1σ uncertainty')
+        fit_label = "ERF model"
+
+    ax1.plot(t, r, label=f"{fit_label} radius fit", linewidth=2)
+    if fit_method == "erf_model":
+        ax1.fill_between(t, r - r_std, r + r_std, color='b', alpha=0.3, label='Fit 1σ uncertainty')
 
     ax2.plot(t, v, label="Velocity", color='red')
     if fit_method == "erf_model":
-        ax2.fill_between(t, v - v_std, v + v_std, color='red', alpha=0.2, label='Velocity 1σ')
+        ax2.fill_between(t, v - v_std, v + v_std, color='red', alpha=0.2, label='Velocity 1σ uncertainty')
+
+    if radius_err is not None:
+        ax1.errorbar(
+            time,
+            radius,
+            yerr=radius_err,
+            fmt='o',
+            markersize=np.sqrt(30),     # match scatter s=30
+            markerfacecolor='blue',     # match scatter color
+            markeredgecolor='blue',
+            ecolor='blue',              # error bar color
+            capsize=3,
+            linestyle='none',
+            label="Experimental radius data"
+        )
+    else:
+        ax1.scatter(time, radius, label="Experimental radius data", s=30)
 
     ax1.set_xlabel("Time [ns]")
     ax1.set_ylabel("Radius [mm]")
     ax2.set_ylabel("Velocity [km/s]")
+    # Cap velocity y-axis
+    v_min = np.min(v - v_std)
+    v_max = np.max(v + v_std)
+    v_max_cap = np.max(v) + 50  # maximum 50 km/s above the max velocity
+    v_min_cap = np.min(v) - 50  # optional, max 50 km/s below the min velocity
+
+    ax2.set_ylim(max(v_min, v_min_cap), min(v_max, v_max_cap))
+
+    # -------------------- LEGEND WITHOUT UNCERTAINTY BANDS --------------------
+    # Collect handles from BOTH axes
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+
+    handles = h1 + h2
+    labels = l1 + l2
+
+    filtered_handles = []
+    filtered_labels = []
+
+    for h, l in zip(handles, labels):
+        if "uncertainty" in l.lower():   # exclude 1σ bands
+            continue
+        filtered_handles.append(h)
+        filtered_labels.append(l)
+
+    # Place combined legend on radius axis
+    ax1.legend(filtered_handles, filtered_labels, loc="best")
+    # --------------------------------------------------------------------------
 
     base_name = os.path.splitext(os.path.basename(f))[0]
 

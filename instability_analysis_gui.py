@@ -37,6 +37,12 @@ def autocorrelation_length(data):
         lag_cutoff = n  # no drop below threshold found
     return max(lag_cutoff, 1)  # avoid zero division
 
+def add_resolution(se, resolution):
+    if resolution is None:
+        return se
+    # Treat None as 0
+    base = 0 if se is None else se
+    return np.sqrt(base**2 + resolution**2/12)
 
 # Function to select edge points
 def select_points(x_list, mode, side, center):
@@ -64,6 +70,41 @@ def select_points(x_list, mode, side, center):
             return x_sorted[:half + remainder]  # Left side points
         elif side == 'right':
             return x_sorted[-(half + remainder):]  # Right side points
+
+import numpy as np
+
+def rao_std_se(x, ddof=1, p=0):
+    """
+    Rao (1973) standard error of the standard deviation estimator.
+
+    Parameters
+    ----------
+    x : array of samples
+    ddof : int
+        Degrees of freedom used in the *variance* estimator. For:
+        - raw radii      -> ddof=1
+        - residuals after fitting p params -> ddof=p
+    p : int
+        Number of fitted parameters (0 for raw radii, 2 for linear fit residuals).
+    """
+    x = np.asarray(x)
+    n = len(x)
+    # --- 1. Sample mean
+    mean = np.mean(x)
+    # --- 2. Sample central moments
+    m2 = np.sum((x - mean)**2) / (n - ddof)         # unbiased variance estimator
+    m4 = np.sum((x - mean)**4) / n                   # sample 4th moment (Rao uses 1/n)
+    # --- 3. Estimate sigma^2 and mu4
+    sigma2 = m2
+    sigma4 = sigma2**2
+    # --- 4. Rao's SE of s^2
+    se_s2 = np.sqrt((m4 - ((n - 3)/(n - 1)) * sigma4) / n)
+    # --- 5. Delta method: se(s) ≈ (1/(2s)) * se(s^2)
+    s = np.sqrt(sigma2)
+    se_s = se_s2 / (2 * s)
+
+    return s, se_s
+
 
 # Check if a point is in any forbidden zone
 def in_forbidden_zone(x, y, zones):
@@ -240,6 +281,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
         right_mrti = np.std(right_res / pxmm)
         mrti_instability = (left_mrti + right_mrti) / 2
 
+        '''left_mrti, left_mrti_se = rao_std_se(left_res/pxmm, ddof=2)
+        right_mrti, right_mrti_se = rao_std_se(right_res/pxmm, ddof=2)
+        mrti_instability = (left_mrti + right_mrti) / 2
+        mrti_instability_se = np.sqrt(left_mrti_se**2 + right_mrti_se**2) / 2'''
+
         left_mrti_iqr = (np.percentile(left_res, 75) - np.percentile(left_res, 25)) / pxmm
         right_mrti_iqr = (np.percentile(right_res, 75) - np.percentile(right_res, 25)) / pxmm
         mrti_instability_iqr = (left_mrti_iqr + right_mrti_iqr) / 2
@@ -293,11 +339,11 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
             mrti_instability_se = np.std(boot_mrti)
 
         if resolution:
-            radius_sem = np.sqrt(radius_sem**2+resolution**2)
-            mrti_instability_se = np.sqrt(mrti_instability_se**2+resolution**2)
-            instability_se = np.sqrt(instability_se**2+resolution**2)
-            instability_iqr_se = np.sqrt(instability_iqr_se**2+resolution**2)
-            mrti_iqr_se = np.sqrt(mrti_iqr_se**2+resolution**2)
+            radius_sem           = add_resolution(radius_sem, resolution)
+            mrti_instability_se  = add_resolution(mrti_instability_se, resolution)
+            instability_se       = add_resolution(instability_se, resolution)
+            instability_iqr_se   = add_resolution(instability_iqr_se, resolution)
+            mrti_iqr_se          = add_resolution(mrti_iqr_se, resolution)
 
         # outer x values for each y
         left_y_single, left_x_single = single_valued_profile(left_x, left_y, agg=np.min)
@@ -331,6 +377,13 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
             fft_wavelengths = 1/fft_freqs[1:]
             fft_psd = psd[1:]
+            if len(fft_psd) > 0:
+                idx = np.argmax(fft_psd)
+                dominant_wavelength = fft_wavelengths[idx]
+                fft_power = fft_psd[idx]
+            else:
+                dominant_wavelength = None
+                fft_power = None
             #################################################
 
 
@@ -345,6 +398,13 @@ def analyze_image(image_path, margin_top, margin_bot, threshold_fraction, pinch_
 
             fft_wavelengths_detrended = 1/fft_freqs[1:]
             fft_psd_detrended = psd_detrended[1:]
+            if len(fft_psd_detrended) > 0:
+                idx_d = np.argmax(fft_psd_detrended)
+                dominant_wavelength_detrended = fft_wavelengths_detrended[idx_d]
+                fft_power_detrended = fft_psd_detrended[idx_d]
+            else:
+                dominant_wavelength_detrended = None
+                fft_power_detrended = None
             #################################################
 
 

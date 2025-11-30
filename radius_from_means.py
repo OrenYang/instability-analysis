@@ -5,6 +5,34 @@ import tkinter as tk
 from tkinter import filedialog
 import csv
 
+"""
+This script processes boundary-point NPZ files and their corresponding images
+to compute the average plasma radius and instability amplitude for each shot.
+
+Workflow:
+1. The user is prompted (via Tkinter dialogs) to select:
+      • A folder containing *_boundary_points.npz files
+      • A folder containing the corresponding images (PNG/JPG/TIFF)
+
+2. For each NPZ file, the script:
+      • Extracts left/right boundary x-y points
+      • Computes the mean boundary location as a function of y
+      • Performs a linear fit to remove large-scale curvature
+      • Computes radius in pixels as (right_x − left_x) / 2
+      • Computes instability amplitude as the standard deviation of residuals
+      • Finds the matching image, reads its pixel height,
+        and converts pixel measurements to millimeters using a known
+        real-world image height (height_mm).
+
+3. The script outputs one row per shot into radius_results.csv:
+      • Shot identifier (base filename)
+      • Radius (px)
+      • Radius (mm)
+      • Instability amplitude (mm)
+
+4. The results CSV is saved one directory above the NPZ folder.
+"""
+
 # Fixed real-world image height in mm
 height_mm = 13.5  # <-- change this to your setup
 
@@ -47,7 +75,7 @@ def process_pair(npz_path, image_path, height_mm):
     left_instability = np.std(left_residuals)
     right_instability = np.std(right_residuals)
     instability_amplitude = (left_instability + right_instability) / 2
-    
+
     # Image height in px
     with Image.open(image_path) as img:
         height_px = img.height
