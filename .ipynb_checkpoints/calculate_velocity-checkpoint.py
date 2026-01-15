@@ -17,10 +17,6 @@ save = True
 plot = True
 make_title = False
 use_radius_err = True
-
-matplotlib.rcParams.update({
-    "font.size": 16,
-    })
 # ------------------------------------------------------
 
 """
@@ -358,7 +354,7 @@ if __name__ == '__main__':
     if fit_method == "erf_model":
         fit_label = "ERF model"
 
-    ax1.plot(t, r, label=f"{fit_label} fit", linewidth=2)
+    ax1.plot(t, r, label=f"{fit_label} radius fit", linewidth=2)
     if fit_method == "erf_model":
         ax1.fill_between(t, r - r_std, r + r_std, color='b', alpha=0.3, label='Fit 1σ uncertainty')
 
@@ -378,10 +374,10 @@ if __name__ == '__main__':
             ecolor='blue',              # error bar color
             capsize=3,
             linestyle='none',
-            label="Experimental radius"
+            label="Experimental radius data"
         )
     else:
-        ax1.scatter(time, radius, label="Experimental radius", s=30)
+        ax1.scatter(time, radius, label="Experimental radius data", s=30)
 
     ax1.set_xlabel("Time [ns]")
     ax1.set_ylabel("Radius [mm]")
@@ -426,7 +422,7 @@ if __name__ == '__main__':
             title = f"{psi} psi, -{timing} us"
         elif len(parts) == 4:
             psi1, timing1, psi2, timing2 = parts
-            title = f"Liner: {psi1} PSI, {timing1} ns | Target: {psi2} PSI, {timing2} ns"
+            title = f"Liner: {psi1} psi, {timing1} ns | Target: {psi2} psi, {timing2} ns"
     except Exception:
         title = base_name  # fallback
 
@@ -443,10 +439,8 @@ if __name__ == '__main__':
         os.makedirs(fit_dir, exist_ok=True)
 
         # Save plot
-        plot_path = os.path.join(plot_dir, f"{base_name}_{fit_method}_fit.svg")
-        plt.tight_layout()
-        plt.savefig(plot_path, format="svg")
         plot_path = os.path.join(plot_dir, f"{base_name}_{fit_method}_fit.png")
+        plt.tight_layout()
         plt.savefig(plot_path, dpi=300)
         print(f"✅ Plot saved to: {plot_path}")
 

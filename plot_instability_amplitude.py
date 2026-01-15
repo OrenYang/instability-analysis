@@ -9,9 +9,13 @@ matplotlib.use("TkAgg")
 from scipy.optimize import curve_fit
 
 # -------------------- USER OPTIONS --------------------
-save = False
+save = True
 plot = True
 make_title = False
+
+matplotlib.rcParams.update({
+    "font.size": 16,
+    })
 # ------------------------------------------------------
 
 # --- Tkinter file dialogs ---
@@ -120,10 +124,10 @@ title = base_name
 try:
     if len(parts) == 2:
         psi, timing = parts
-        title = f"{psi} psi, -{timing} µs"
+        title = f"{psi} PSI, -{timing} µs"
     elif len(parts) == 4:
         psi1, timing1, psi2, timing2 = parts
-        title = f"Liner: {psi1} psi, {timing1} ns | Target: {psi2} psi, {timing2} ns"
+        title = f"Liner: {psi1} PSI, {timing1} ns | Target: {psi2} PSI, {timing2} ns"
 except Exception:
     pass
 
@@ -141,8 +145,11 @@ if save:
     os.makedirs(plot_dir, exist_ok=True)
     os.makedirs(fit_dir, exist_ok=True)
 
-    plot_path = os.path.join(plot_dir, f"{base_name}_exp_fit_limited.png")
-    fit_path = os.path.join(fit_dir, f"{base_name}_exp_fit_limited.npz")
+    plot_path = os.path.join(plot_dir, f"{base_name}_exp_fit.svg")
+    plt.savefig(plot_path, format="svg")
+
+    plot_path = os.path.join(plot_dir, f"{base_name}_exp_fit.png")
+    fit_path = os.path.join(fit_dir, f"{base_name}_exp_fit.npz")
 
     plt.savefig(plot_path, dpi=300)
     print(f"✅ Plot saved to: {plot_path}")
